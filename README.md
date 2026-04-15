@@ -1,6 +1,6 @@
 # Focus RPG
 
-Focus RPG is a Flutter app that turns focus sessions into a lightweight role-playing game experience. The current build includes a main menu, save slots, character class selection, local profile persistence, and the first database layer for sessions, inventory, and cosmetics.
+Focus RPG is a Flutter-based focus timer and productivity app with RPG-inspired progression systems. The current build includes a main menu, save slots, character class selection, local profile persistence, and the first database layer for sessions, inventory, and cosmetics.
 
 ## Features
 
