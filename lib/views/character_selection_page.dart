@@ -76,28 +76,35 @@ class _CharacterSelectionPageState extends State<CharacterSelectionPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Text(
-                'Choose a class',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 32),
-
-              Expanded(
-                child: Center(
-                  child: SizedBox(
-                    width: 720,
-                    child: Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 24,
-                      runSpacing: 24,
-                      children: _classes.map((characterClass) {
-                        final isSelected = _selectedClass == characterClass;
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 390),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Choose a class',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 20),
+                  Expanded(
+                    child: GridView.builder(
+                      itemCount: _classes.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            childAspectRatio: 0.92,
+                          ),
+                      itemBuilder: (context, index) {
+                        final String characterClass = _classes[index];
+                        final bool isSelected =
+                            _selectedClass == characterClass;
 
                         return GestureDetector(
                           onTap: () {
@@ -107,49 +114,45 @@ class _CharacterSelectionPageState extends State<CharacterSelectionPage> {
                           },
                           child: AnimatedScale(
                             duration: const Duration(milliseconds: 120),
-                            scale: isSelected ? 1.04 : 1.0,
-                            child: SizedBox(
-                              width: 280,
-                              height: 240,
-                              child: _ClassCard(
-                                label: characterClass,
-                                isSelected: isSelected,
-                              ),
+                            scale: isSelected ? 1.03 : 1.0,
+                            child: _ClassCard(
+                              label: characterClass,
+                              isSelected: isSelected,
                             ),
                           ),
                         );
-                      }).toList(),
+                      },
                     ),
                   ),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  SizedBox(
-                    width: 160,
-                    height: 50,
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      child: const Text('Back'),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 160,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: _selectedClass == null || _isSaving
-                          ? null
-                          : _createProfile,
-                      child: Text(_isSaving ? 'Saving...' : 'Continue'),
-                    ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 50,
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(context).maybePop(),
+                            child: const Text('Back'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SizedBox(
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed: _selectedClass == null || _isSaving
+                                ? null
+                                : _createProfile,
+                            child: Text(_isSaving ? 'Saving...' : 'Continue'),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -165,28 +168,28 @@ class _ClassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+
     return Card(
-      color: const Color(0xFF1A1822),
+      color: colors.surfaceContainerHighest,
       elevation: isSelected ? 8 : 2,
       shape: RoundedRectangleBorder(
         side: BorderSide(
-          color: isSelected
-              ? const Color.fromARGB(255, 227, 167, 4)
-              : Colors.white24,
+          color: isSelected ? const Color(0xFFE3A704) : colors.outlineVariant,
           width: isSelected ? 2 : 1,
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Center(
         child: Text(
           label,
           textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w700,
-            color: isSelected
-                ? const Color.fromARGB(255, 227, 167, 4)
-                : Colors.grey,
+            color: isSelected ? const Color(0xFFE3A704) : colors.onSurface,
           ),
         ),
       ),

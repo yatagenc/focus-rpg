@@ -2,7 +2,7 @@ class DatabaseSchema {
   DatabaseSchema._();
 
   static const String databaseName = 'focus_rpg.db';
-  static const int databaseVersion = 1;
+  static const int databaseVersion = 2;
 
   static const String profileTable = 'Profile';
   static const String sessionTable = 'Session';
@@ -11,6 +11,7 @@ class DatabaseSchema {
   static const String cosmeticsTable = 'Cosmetics';
   static const String ownedCosmeticsTable = 'OwnedCosmetics';
   static const String equippedCosmeticsTable = 'EquippedCosmetics';
+  static const String appSettingsTable = 'AppSettings';
 
   static List<String> createStatements() {
     return <String>[
@@ -88,6 +89,9 @@ class DatabaseSchema {
       )
       ''',
       '''
+      ${createAppSettingsTableStatement()}
+      ''',
+      '''
       CREATE TRIGGER profile_max_three_before_insert
       BEFORE INSERT ON $profileTable
       BEGIN
@@ -118,6 +122,36 @@ class DatabaseSchema {
         (4, 'Shadow Mask', 'head', 'thief'),
         (5, 'Traveler Cape', 'body', 'all')
       ''',
+      seedAppSettingsStatement(),
     ];
+  }
+
+  static String createAppSettingsTableStatement() {
+    return '''
+      CREATE TABLE IF NOT EXISTS $appSettingsTable (
+        settings_id INTEGER PRIMARY KEY CHECK (settings_id = 1),
+        dark_mode INTEGER NOT NULL DEFAULT 1 CHECK (dark_mode IN (0, 1)),
+        music_enabled INTEGER NOT NULL DEFAULT 1 CHECK (music_enabled IN (0, 1)),
+        sfx_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sfx_enabled IN (0, 1)),
+        music_volume REAL NOT NULL DEFAULT 0.15 CHECK (music_volume >= 0 AND music_volume <= 1),
+        sfx_volume REAL NOT NULL DEFAULT 0.55 CHECK (sfx_volume >= 0 AND sfx_volume <= 1),
+        updated_at TEXT NOT NULL
+      )
+      ''';
+  }
+
+  static String seedAppSettingsStatement() {
+    return '''
+      INSERT OR IGNORE INTO $appSettingsTable (
+        settings_id,
+        dark_mode,
+        music_enabled,
+        sfx_enabled,
+        music_volume,
+        sfx_volume,
+        updated_at
+      )
+      VALUES (1, 1, 1, 1, 0.15, 0.55, '${DateTime.now().toIso8601String()}')
+      ''';
   }
 }

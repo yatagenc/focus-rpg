@@ -33,6 +33,10 @@ lib/
   widgets/              Shared UI widgets
 ```
 
+## Project Documentation
+
+See [docs/README.md](docs/README.md) for product goals, architecture, progression, economy, UI direction, testing strategy, and roadmap notes.
+
 ## Getting Started
 
 Install Flutter, then fetch dependencies:
@@ -45,6 +49,12 @@ Run the app:
 
 ```bash
 flutter run
+```
+
+Run the web app with persistent browser storage:
+
+```powershell
+.\scripts\run_web_persistent.ps1
 ```
 
 Run the test suite:

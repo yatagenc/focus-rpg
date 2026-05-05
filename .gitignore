@@ -35,6 +35,7 @@ migrate_working_dir/
 
 # Local environment files
 .env*
+.chrome_profile/
 
 # Web build artifacts
 *.dart.js

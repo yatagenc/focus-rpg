@@ -10,7 +10,7 @@ class MenuButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 55,
-      width: 120,
+      width: double.infinity,
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
