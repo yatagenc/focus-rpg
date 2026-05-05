@@ -1,21 +1,25 @@
 # Focus RPG
 
-Focus RPG is a Flutter-based focus timer and productivity app with RPG-inspired progression systems. The current build includes a main menu, save slots, character class selection, local profile persistence, and the first database layer for sessions, inventory, and cosmetics.
+Focus RPG is a Flutter-based focus timer and productivity app with RPG-inspired progression systems. The current build includes a portrait-oriented mobile layout, main menu, persistent save slots, character class selection, global settings, a main hub, focus sessions, profile statistics, and the first database layer for sessions, inventory, and cosmetics.
 
 ## Features
 
-- Dark themed Flutter UI with main menu, settings, save slots, and character selection routes.
+- Dark themed Flutter UI with portrait-oriented main menu, settings, save slots, character selection, main hub, focus session, and profile routes.
 - Up to three local save profiles.
 - Character classes: Mage, Knight, Archer, and Thief.
-- SQLite persistence through `sqflite`.
+- SQLite persistence through `sqflite`, with Windows support through `sqflite_common_ffi`.
+- Global settings persistence for dark mode, sound effects, music, and volume levels.
+- Focus session flow with start confirmation, break handling, completion, cancellation confirmation, and recent session history.
+- XP, level threshold, and gold reward calculations based on valid study minutes.
 - Seeded item and cosmetic tables for future progression and reward systems.
-- Repository layer for profiles, focus sessions, inventory quantities, owned cosmetics, and equipped cosmetics.
+- Repository layer for profiles, settings, focus sessions, inventory quantities, owned cosmetics, and equipped cosmetics.
 
 ## Tech Stack
 
 - Flutter
 - Dart
 - `sqflite`
+- `sqflite_common_ffi`
 - `path`
 - `path_provider`
 
@@ -33,6 +37,10 @@ lib/
   widgets/              Shared UI widgets
 ```
 
+## Project Documentation
+
+See [docs/README.md](docs/README.md) for product goals, architecture, progression, economy, UI direction, testing strategy, and roadmap notes.
+
 ## Getting Started
 
 Install Flutter, then fetch dependencies:
@@ -47,6 +55,12 @@ Run the app:
 flutter run
 ```
 
+Run the web app with persistent browser storage:
+
+```powershell
+.\scripts\run_web_persistent.ps1
+```
+
 Run the test suite:
 
 ```bash
@@ -55,4 +69,6 @@ flutter test
 
 ## Current Status
 
-This is an early prototype. The data model is in place for focus sessions and RPG progression, while the current UI focuses on profile slot creation and class selection. The next likely milestones are session timers, reward calculation, inventory views, and cosmetic equipment screens.
+This is an early playable prototype. The app can create and persist save slots, open a selected profile into the main hub, start and complete focus sessions, award XP and gold from valid study minutes, show profile statistics, and list recent sessions. Global settings are also persisted outside individual save files.
+
+Several systems are intentionally still placeholder-level. Shop, inventory UI, cosmetic equipment, power-ups, animated backgrounds, audio feedback, and AFK-prevention minigames are planned but not production-ready yet. The break unlock duration is currently shortened for testing and should be restored before a release build.

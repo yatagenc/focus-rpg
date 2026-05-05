@@ -64,39 +64,46 @@ class _SlotsPageState extends State<SlotsPage> {
           };
 
           return Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: slots
-                    .map(
-                      (slotNumber) => Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: SizedBox(
-                          width: 240,
-                          height: 360,
-                          child: _SlotCard(
-                            slotNumber: slotNumber,
-                            save: savesById[slotNumber],
-                            onCreate: () async {
-                              final result = await Navigator.pushNamed(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 390),
+              child: ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: slots.length,
+                separatorBuilder: (context, index) =>
+                    const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final int slotNumber = slots[index];
+                  return SizedBox(
+                    height: 180,
+                    child: _SlotCard(
+                      slotNumber: slotNumber,
+                      save: savesById[slotNumber],
+                      onOpen: savesById[slotNumber] == null
+                          ? null
+                          : () async {
+                              await Navigator.pushNamed(
                                 context,
-                                AppRoutes.characterSelection,
+                                AppRoutes.mainHub,
+                                arguments: slotNumber,
                               );
-
-                              if (result == true) {
-                                await _reload();
-                              }
+                              await _reload();
                             },
-                            onDelete: savesById[slotNumber] == null
-                                ? null
-                                : () => _deleteProfile(slotNumber),
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
+                      onCreate: () async {
+                        final result = await Navigator.pushNamed(
+                          context,
+                          AppRoutes.characterSelection,
+                        );
+
+                        if (result == true) {
+                          await _reload();
+                        }
+                      },
+                      onDelete: savesById[slotNumber] == null
+                          ? null
+                          : () => _deleteProfile(slotNumber),
+                    ),
+                  );
+                },
               ),
             ),
           );
@@ -110,12 +117,14 @@ class _SlotCard extends StatelessWidget {
   const _SlotCard({
     required this.slotNumber,
     required this.save,
+    required this.onOpen,
     required this.onCreate,
     required this.onDelete,
   });
 
   final int slotNumber;
   final PlayerSave? save;
+  final VoidCallback? onOpen;
   final VoidCallback onCreate;
   final VoidCallback? onDelete;
 
@@ -125,50 +134,60 @@ class _SlotCard extends StatelessWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        padding: const EdgeInsets.all(16),
+        child: Row(
           children: [
-            Text(
-              'Slot $slotNumber',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const Spacer(),
-            if (currentSave == null) ...<Widget>[
-              Text(
-                'Empty Save',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-            ] else ...<Widget>[
-              Text(
-                currentSave.playerClass.toUpperCase(),
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Level ${currentSave.level}  XP ${currentSave.xp}',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text('Gold ${currentSave.gold}', textAlign: TextAlign.center),
-            ],
-            const Spacer(),
-            SizedBox(
-              height: 48,
-              child: ElevatedButton(
-                onPressed: currentSave == null ? onCreate : null,
-                child: const Text('Create'),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Slot $slotNumber',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  if (currentSave == null) ...<Widget>[
+                    Text(
+                      'Empty Save',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ] else ...<Widget>[
+                    Text(
+                      currentSave.playerClass.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    Text('Level ${currentSave.level}'),
+                  ],
+                ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(width: 12),
             SizedBox(
-              height: 48,
-              child: OutlinedButton(
-                onPressed: onDelete,
-                child: const Text('Delete'),
+              width: 104,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    height: 44,
+                    child: ElevatedButton(
+                      onPressed: currentSave == null ? onCreate : onOpen,
+                      child: Text(currentSave == null ? 'Create' : 'Enter'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 44,
+                    child: OutlinedButton(
+                      onPressed: onDelete,
+                      child: const Text('Delete'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
