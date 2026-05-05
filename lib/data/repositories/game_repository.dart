@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 
+import '../../core/progression.dart';
 import '../database/app_database.dart';
 import '../database/database_schema.dart';
 import '../models/equipped_cosmetic.dart';
@@ -84,6 +85,81 @@ class GameRepository {
     return rows.map(Profile.fromMap).toList();
   }
 
+  Future<Profile> completeFocusSession({
+    required int profileId,
+    required int durationMinutes,
+    String sessionType = 'focus',
+    String? startedAt,
+    String? endedAt,
+  }) async {
+    _validateNonNegative(durationMinutes, 'duration_minutes');
+
+    final Database db = await _database.database;
+    final String endTimestamp = endedAt ?? DateTime.now().toIso8601String();
+    final String startTimestamp = startedAt ?? endTimestamp;
+    final SessionRewards rewards = progressionSystem.calculateSessionRewards(
+      durationMinutes,
+    );
+    final int xpEarned = rewards.earnedXp;
+    final int goldEarned = rewards.earnedGold;
+
+    return db.transaction<Profile>((Transaction txn) async {
+      final List<Map<String, Object?>> profileRows = await txn.query(
+        DatabaseSchema.profileTable,
+        where: 'profile_id = ?',
+        whereArgs: <Object?>[profileId],
+        limit: 1,
+      );
+
+      if (profileRows.isEmpty) {
+        throw const DatabaseValidationException('Profile does not exist.');
+      }
+
+      final Profile currentProfile = Profile.fromMap(profileRows.first);
+      final int nextXp = currentProfile.profileXp + xpEarned;
+      final int nextLevel = progressionSystem.getLevelFromTotalXp(nextXp).level;
+
+      await txn.insert(
+        DatabaseSchema.sessionTable,
+        GameSession(
+          profileId: profileId,
+          sessionType: sessionType,
+          startedAt: startTimestamp,
+          endedAt: endTimestamp,
+          durationMinutes: durationMinutes,
+          completed: true,
+          xpEarned: xpEarned,
+          goldEarned: goldEarned,
+        ).toMap()..remove('session_id'),
+      );
+
+      await txn.update(
+        DatabaseSchema.profileTable,
+        <String, Object?>{
+          'profile_xp': nextXp,
+          'profile_level': nextLevel,
+          'profile_gold': currentProfile.profileGold + goldEarned,
+          'profile_last_played_at': endTimestamp,
+          'profile_total_study_minutes':
+              currentProfile.profileTotalStudyMinutes + durationMinutes,
+          'profile_total_completed_sessions':
+              currentProfile.profileTotalCompletedSessions + 1,
+        },
+        where: 'profile_id = ?',
+        whereArgs: <Object?>[profileId],
+      );
+
+      final List<Map<String, Object?>> updatedRows = await txn.query(
+        DatabaseSchema.profileTable,
+        where: 'profile_id = ?',
+        whereArgs: <Object?>[profileId],
+        limit: 1,
+      );
+
+      return Profile.fromMap(updatedRows.first);
+    });
+  }
+
   Future<Profile?> getProfileById(int profileId) async {
     final Database db = await _database.database;
     final List<Map<String, Object?>> rows = await db.query(
@@ -129,6 +205,22 @@ class GameRepository {
       where: 'profile_id = ?',
       whereArgs: <Object?>[profileId],
       orderBy: 'started_at DESC',
+    );
+
+    return rows.map(GameSession.fromMap).toList();
+  }
+
+  Future<List<GameSession>> getRecentSessionsForProfile({
+    required int profileId,
+    int limit = 10,
+  }) async {
+    final Database db = await _database.database;
+    final List<Map<String, Object?>> rows = await db.query(
+      DatabaseSchema.sessionTable,
+      where: 'profile_id = ?',
+      whereArgs: <Object?>[profileId],
+      orderBy: 'started_at DESC',
+      limit: limit,
     );
 
     return rows.map(GameSession.fromMap).toList();

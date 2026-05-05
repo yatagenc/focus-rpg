@@ -2,6 +2,8 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
+import 'database_factory_config_stub.dart'
+    if (dart.library.io) 'database_factory_config_io.dart';
 import 'database_schema.dart';
 
 class AppDatabase {
@@ -22,6 +24,8 @@ class AppDatabase {
   }
 
   Future<Database> _openDatabase() async {
+    await configureDatabaseFactory();
+
     final directory = await getApplicationDocumentsDirectory();
     final databasePath = path.join(directory.path, DatabaseSchema.databaseName);
 
@@ -38,6 +42,12 @@ class AppDatabase {
 
         for (final String statement in DatabaseSchema.seedStatements()) {
           await db.execute(statement);
+        }
+      },
+      onUpgrade: (Database db, int oldVersion, int newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(DatabaseSchema.createAppSettingsTableStatement());
+          await db.execute(DatabaseSchema.seedAppSettingsStatement());
         }
       },
     );
