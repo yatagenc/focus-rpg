@@ -2,7 +2,7 @@ class DatabaseSchema {
   DatabaseSchema._();
 
   static const String databaseName = 'focus_rpg.db';
-  static const int databaseVersion = 2;
+  static const int databaseVersion = 3;
 
   static const String profileTable = 'Profile';
   static const String sessionTable = 'Session';
@@ -25,7 +25,9 @@ class DatabaseSchema {
         profile_created_at TEXT NOT NULL,
         profile_last_played_at TEXT,
         profile_total_study_minutes INTEGER NOT NULL DEFAULT 0 CHECK (profile_total_study_minutes >= 0),
-        profile_total_completed_sessions INTEGER NOT NULL DEFAULT 0 CHECK (profile_total_completed_sessions >= 0)
+        profile_total_completed_sessions INTEGER NOT NULL DEFAULT 0 CHECK (profile_total_completed_sessions >= 0),
+        profile_streak_days INTEGER NOT NULL DEFAULT 0 CHECK (profile_streak_days >= 0),
+        profile_last_streak_date TEXT
       )
       ''',
       '''
@@ -153,5 +155,18 @@ class DatabaseSchema {
       )
       VALUES (1, 1, 1, 1, 0.15, 0.55, '${DateTime.now().toIso8601String()}')
       ''';
+  }
+
+  static List<String> addProfileStreakColumnsStatements() {
+    return <String>[
+      '''
+      ALTER TABLE $profileTable
+      ADD COLUMN profile_streak_days INTEGER NOT NULL DEFAULT 0 CHECK (profile_streak_days >= 0)
+      ''',
+      '''
+      ALTER TABLE $profileTable
+      ADD COLUMN profile_last_streak_date TEXT
+      ''',
+    ];
   }
 }

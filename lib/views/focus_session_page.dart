@@ -2,7 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../data/potion_catalog.dart';
+import '../models/potion_definition.dart';
+import '../models/potion_effect_type.dart';
+import '../services/inventory_service.dart';
 import '../services/save_service.dart';
+
+class FocusSessionArguments {
+  const FocusSessionArguments({
+    required this.profileId,
+    this.selectedPotionIds = const <String>[],
+  });
+
+  final int profileId;
+  final List<String> selectedPotionIds;
+}
 
 class FocusSessionPage extends StatefulWidget {
   const FocusSessionPage({super.key});
@@ -13,20 +27,25 @@ class FocusSessionPage extends StatefulWidget {
 
 class _FocusSessionPageState extends State<FocusSessionPage> {
   static const int _breakUnlockSeconds = 60;
-  static const int _breakDurationSeconds = 10 * 60;
+  static const int _baseBreakDurationSeconds = 10 * 60;
 
   final SaveService _saveService = SaveService();
+  final InventoryService _inventoryService = InventoryService.instance;
 
   Timer? _timer;
+  int? _profileId;
+  List<String> _selectedPotionIds = <String>[];
+  late PotionSessionEffects _sessionEffects = const PotionSessionEffects();
   DateTime? _startedAt;
   DateTime? _focusResumedAt;
   DateTime? _breakStartedAt;
   int _focusAccumulatedMilliseconds = 0;
   int _elapsedMilliseconds = 0;
   int _totalSessionMilliseconds = 0;
-  int _breakRemainingSeconds = _breakDurationSeconds;
+  int _breakRemainingSeconds = _baseBreakDurationSeconds;
   bool _hasUsedBreak = false;
   bool _isSaving = false;
+  bool _isStarting = false;
 
   bool get _isRunning => _startedAt != null;
   bool get _isBreakActive => _breakStartedAt != null;
@@ -35,6 +54,23 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       !_isBreakActive &&
       !_hasUsedBreak &&
       _elapsedMilliseconds >= _breakUnlockSeconds * 1000;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_profileId != null) {
+      return;
+    }
+
+    final Object? arguments = ModalRoute.of(context)?.settings.arguments;
+    if (arguments is FocusSessionArguments) {
+      _profileId = arguments.profileId;
+      _selectedPotionIds = List<String>.from(arguments.selectedPotionIds);
+    } else if (arguments is int) {
+      _profileId = arguments;
+    }
+    _sessionEffects = PotionSessionEffects.fromPotionIds(_selectedPotionIds);
+  }
 
   @override
   void dispose() {
@@ -59,10 +95,38 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       return;
     }
 
-    _start();
+    await _start();
   }
 
-  void _start() {
+  Future<void> _start() async {
+    final int? profileId = _profileId;
+    if (profileId == null || _isStarting) {
+      return;
+    }
+
+    setState(() {
+      _isStarting = true;
+    });
+
+    final InventoryMutationResult consumeResult = _inventoryService
+        .consumeSelectedPotionsForSession(
+          profileId: profileId,
+          selectedPotionIds: _selectedPotionIds,
+        );
+
+    if (!consumeResult.success) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(consumeResult.message ?? 'Invalid loadout.')),
+      );
+      setState(() {
+        _isStarting = false;
+      });
+      return;
+    }
+
     setState(() {
       _startedAt = DateTime.now();
       _focusResumedAt = _startedAt;
@@ -70,8 +134,9 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       _elapsedMilliseconds = 0;
       _totalSessionMilliseconds = 0;
       _breakStartedAt = null;
-      _breakRemainingSeconds = _breakDurationSeconds;
+      _breakRemainingSeconds = _sessionEffects.breakDurationSeconds;
       _hasUsedBreak = false;
+      _isStarting = false;
     });
 
     _timer = Timer.periodic(const Duration(milliseconds: 50), (_) {
@@ -97,9 +162,10 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
 
         if (breakStartedAt != null) {
           final int breakElapsed = now.difference(breakStartedAt).inSeconds;
-          _breakRemainingSeconds = (_breakDurationSeconds - breakElapsed)
-              .clamp(0, _breakDurationSeconds)
-              .toInt();
+          _breakRemainingSeconds =
+              (_sessionEffects.breakDurationSeconds - breakElapsed)
+                  .clamp(0, _sessionEffects.breakDurationSeconds)
+                  .toInt();
 
           if (_breakRemainingSeconds == 0) {
             _breakStartedAt = null;
@@ -131,7 +197,7 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       _focusAccumulatedMilliseconds = _elapsedMilliseconds;
       _breakStartedAt = DateTime.now();
       _focusResumedAt = null;
-      _breakRemainingSeconds = _breakDurationSeconds;
+      _breakRemainingSeconds = _sessionEffects.breakDurationSeconds;
       _hasUsedBreak = true;
     });
   }
@@ -195,7 +261,7 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
   }
 
   Future<void> _complete() async {
-    final int? profileId = ModalRoute.of(context)?.settings.arguments as int?;
+    final int? profileId = _profileId;
     final DateTime? startedAt = _startedAt;
     if (profileId == null || startedAt == null || _isSaving) {
       return;
@@ -216,6 +282,9 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
         durationMinutes: durationMinutes,
         startedAt: startedAt.toIso8601String(),
         endedAt: endedAt.toIso8601String(),
+        xpMultiplier: _sessionEffects.xpMultiplier,
+        goldMultiplier: _sessionEffects.goldMultiplier,
+        rewardBonusMinutes: _sessionEffects.rewardBonusMinutes,
       );
 
       if (!mounted) {
@@ -252,7 +321,7 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       appBar: AppBar(
         leading: IconButton(
           tooltip: 'Back',
-          onPressed: _isSaving ? null : _cancelSession,
+          onPressed: _isSaving || _isStarting ? null : _cancelSession,
           icon: const Icon(Icons.arrow_back),
         ),
         title: const Text('Focus Session'),
@@ -271,6 +340,10 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                     alignment: Alignment.centerRight,
                     child: _TotalSessionPill(totalTimerText: totalTimerText),
                   ),
+                  if (_selectedPotionIds.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _ActivePotionEffects(effects: _sessionEffects),
+                  ],
                   const Spacer(),
                   Text(
                     timerText,
@@ -303,7 +376,7 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                   SizedBox(
                     height: 50,
                     child: OutlinedButton.icon(
-                      onPressed: _isRunning && !_isSaving
+                      onPressed: _isRunning && !_isSaving && !_isStarting
                           ? _addTestMinute
                           : null,
                       icon: const Icon(Icons.add),
@@ -314,7 +387,11 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                   SizedBox(
                     height: 54,
                     child: FilledButton.icon(
-                      onPressed: _isRunning && !_isSaving && !_isBreakActive
+                      onPressed:
+                          _isRunning &&
+                              !_isSaving &&
+                              !_isBreakActive &&
+                              !_isStarting
                           ? _complete
                           : null,
                       icon: const Icon(Icons.check),
@@ -325,7 +402,9 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                   SizedBox(
                     height: 50,
                     child: OutlinedButton(
-                      onPressed: _isSaving ? null : _cancelSession,
+                      onPressed: _isSaving || _isStarting
+                          ? null
+                          : _cancelSession,
                       child: const Text('Cancel'),
                     ),
                   ),
@@ -341,16 +420,20 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
   Widget _primarySessionButton(double breakProgress) {
     if (!_isRunning) {
       return ElevatedButton.icon(
-        onPressed: _confirmStart,
+        onPressed: _isStarting ? null : _confirmStart,
         icon: const Icon(Icons.play_arrow),
-        label: const Text('Start'),
+        label: Text(_isStarting ? 'Starting...' : 'Start'),
       );
     }
 
     return _BreakProgressButton(
       progress: breakProgress,
-      enabled: _canSetBreak,
-      label: _hasUsedBreak ? 'Break Used' : 'Set a Break',
+      enabled: _canSetBreak && !_sessionEffects.breaksDisabled,
+      label: _sessionEffects.breaksDisabled
+          ? 'Breaks Disabled'
+          : _hasUsedBreak
+          ? 'Break Used'
+          : 'Set a Break',
       onPressed: _setBreak,
     );
   }
@@ -369,6 +452,117 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
     final int minutes = totalSeconds ~/ 60;
     final int seconds = totalSeconds % 60;
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+}
+
+class PotionSessionEffects {
+  const PotionSessionEffects({
+    this.xpMultiplier = 1.0,
+    this.goldMultiplier = 1.0,
+    this.rewardBonusMinutes = 0,
+    this.breakBonusSeconds = 0,
+    this.breaksDisabled = false,
+    this.labels = const <String>[],
+  });
+
+  final double xpMultiplier;
+  final double goldMultiplier;
+  final int rewardBonusMinutes;
+  final int breakBonusSeconds;
+  final bool breaksDisabled;
+  final List<String> labels;
+
+  int get breakDurationSeconds => breaksDisabled
+      ? 0
+      : _FocusSessionPageState._baseBreakDurationSeconds + breakBonusSeconds;
+
+  static PotionSessionEffects fromPotionIds(List<String> potionIds) {
+    double xpMultiplier = 1.0;
+    double goldMultiplier = 1.0;
+    int rewardBonusMinutes = 0;
+    int breakBonusSeconds = 0;
+    bool breaksDisabled = false;
+    final List<String> labels = <String>[];
+
+    for (final String potionId in potionIds) {
+      final PotionDefinition potion = PotionCatalog.byId(potionId);
+      labels.add(potion.effectSummary);
+
+      switch (potion.effectType) {
+        case PotionEffectType.xpBoost:
+          xpMultiplier += potion.effectValue;
+          break;
+        case PotionEffectType.goldBoost:
+          goldMultiplier += potion.effectValue;
+          break;
+        case PotionEffectType.breakExtension:
+          breakBonusSeconds += (potion.effectValue * 60).round();
+          break;
+        case PotionEffectType.focusDurationExtension:
+          rewardBonusMinutes += potion.effectValue.round();
+          break;
+        case PotionEffectType.rewardRisk:
+          xpMultiplier *= potion.effectValue;
+          goldMultiplier *= potion.effectValue;
+          break;
+        case PotionEffectType.overmind:
+          xpMultiplier *= 1.5;
+          goldMultiplier *= 1.5;
+          breaksDisabled = true;
+          break;
+        case PotionEffectType.eventPenaltyReduction:
+        case PotionEffectType.eventRewardBoost:
+        case PotionEffectType.streakProtection:
+        case PotionEffectType.failureProtection:
+        case PotionEffectType.idlePenaltyReduction:
+        case PotionEffectType.dailyFirstSessionBonus:
+        case PotionEffectType.shopDiscount:
+        case PotionEffectType.rareEventChance:
+          break;
+      }
+    }
+
+    return PotionSessionEffects(
+      xpMultiplier: xpMultiplier,
+      goldMultiplier: goldMultiplier,
+      rewardBonusMinutes: rewardBonusMinutes,
+      breakBonusSeconds: breakBonusSeconds,
+      breaksDisabled: breaksDisabled,
+      labels: List<String>.unmodifiable(labels),
+    );
+  }
+}
+
+class _ActivePotionEffects extends StatelessWidget {
+  const _ActivePotionEffects({required this.effects});
+
+  final PotionSessionEffects effects;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Active Potions',
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            for (final String label in effects.labels.take(3))
+              Text('• $label', style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ),
+      ),
+    );
   }
 }
 

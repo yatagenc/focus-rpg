@@ -11,6 +11,8 @@ class PlayerSave {
     this.lastPlayedAt,
     required this.totalStudyMinutes,
     required this.totalCompletedSessions,
+    required this.streakDays,
+    required this.lastStreakDate,
   });
 
   final int profileId;
@@ -22,6 +24,8 @@ class PlayerSave {
   final String? lastPlayedAt;
   final int totalStudyMinutes;
   final int totalCompletedSessions;
+  final int streakDays;
+  final String? lastStreakDate;
 
   factory PlayerSave.fromProfile(Profile profile) {
     return PlayerSave(
@@ -34,6 +38,8 @@ class PlayerSave {
       lastPlayedAt: profile.profileLastPlayedAt,
       totalStudyMinutes: profile.profileTotalStudyMinutes,
       totalCompletedSessions: profile.profileTotalCompletedSessions,
+      streakDays: profile.profileStreakDays,
+      lastStreakDate: profile.profileLastStreakDate,
     );
   }
 
@@ -48,6 +54,8 @@ class PlayerSave {
       lastPlayedAt: map['profile_last_played_at'] as String?,
       totalStudyMinutes: _readInt(map, 'profile_total_study_minutes'),
       totalCompletedSessions: _readInt(map, 'profile_total_completed_sessions'),
+      streakDays: _readInt(map, 'profile_streak_days'),
+      lastStreakDate: map['profile_last_streak_date'] as String?,
     );
   }
 
@@ -61,6 +69,8 @@ class PlayerSave {
     String? lastPlayedAt,
     int? totalStudyMinutes,
     int? totalCompletedSessions,
+    int? streakDays,
+    String? lastStreakDate,
   }) {
     return PlayerSave(
       profileId: profileId ?? this.profileId,
@@ -73,6 +83,8 @@ class PlayerSave {
       totalStudyMinutes: totalStudyMinutes ?? this.totalStudyMinutes,
       totalCompletedSessions:
           totalCompletedSessions ?? this.totalCompletedSessions,
+      streakDays: streakDays ?? this.streakDays,
+      lastStreakDate: lastStreakDate ?? this.lastStreakDate,
     );
   }
 
@@ -87,6 +99,8 @@ class PlayerSave {
       'profile_last_played_at': lastPlayedAt,
       'profile_total_study_minutes': totalStudyMinutes,
       'profile_total_completed_sessions': totalCompletedSessions,
+      'profile_streak_days': streakDays,
+      'profile_last_streak_date': lastStreakDate,
     };
   }
 

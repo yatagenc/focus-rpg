@@ -165,6 +165,7 @@ class ProgressionSystem {
     int? xpPerMinute,
     double? xpMultiplier,
     double? goldRatio,
+    double? goldMultiplier,
     int? minimumRewardMinutes,
   }) {
     final int safeMinutes = math.max(0, validStudyMinutes);
@@ -178,7 +179,9 @@ class ProgressionSystem {
         safeMinutes * (xpPerMinute ?? config.baseXpPerValidStudyMinute);
     final int earnedXp = (baseXp * (xpMultiplier ?? config.defaultXpMultiplier))
         .round();
-    final int earnedGold = (earnedXp * (goldRatio ?? config.goldRatio)).floor();
+    final int earnedGold =
+        (earnedXp * (goldRatio ?? config.goldRatio) * (goldMultiplier ?? 1.0))
+            .floor();
 
     return SessionRewards(earnedXp: earnedXp, earnedGold: earnedGold);
   }
@@ -260,6 +263,7 @@ SessionRewards calculateSessionRewards(
   int? xpPerMinute,
   double? xpMultiplier,
   double? goldRatio,
+  double? goldMultiplier,
   int? minimumRewardMinutes,
 }) {
   return progressionSystem.calculateSessionRewards(
@@ -267,6 +271,7 @@ SessionRewards calculateSessionRewards(
     xpPerMinute: xpPerMinute,
     xpMultiplier: xpMultiplier,
     goldRatio: goldRatio,
+    goldMultiplier: goldMultiplier,
     minimumRewardMinutes: minimumRewardMinutes,
   );
 }
