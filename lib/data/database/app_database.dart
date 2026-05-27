@@ -58,6 +58,18 @@ class AppDatabase {
         if (oldVersion < 4) {
           await db.execute(DatabaseSchema.createProfilePotionTableStatement());
         }
+        if (oldVersion < 5) {
+          await db.execute(DatabaseSchema.seedCosmeticsStatement());
+        }
+        if (oldVersion < 6) {
+          for (final String statement
+              in DatabaseSchema.addProfileEloColumnStatements()) {
+            await db.execute(statement);
+          }
+        }
+        if (oldVersion < 7) {
+          await db.execute(DatabaseSchema.seedCosmeticsStatement());
+        }
       },
     );
   }

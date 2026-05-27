@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../data/models/game_session.dart';
+import '../data/models/equipped_cosmetic.dart';
 import '../models/player_save.dart';
 import '../services/save_service.dart';
+import '../widgets/layered_avatar.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -36,8 +38,14 @@ class _ProfilePageState extends State<ProfilePage> {
 
     final List<GameSession> sessions = await _saveService
         .getRecentSessionsForProfile(profileId: profileId, limit: 10);
+    final List<EquippedCosmetic> equippedCosmetics = await _saveService
+        .getEquippedCosmeticsForProfile(profileId: profileId);
 
-    return _ProfileViewData(save: save, recentSessions: sessions);
+    return _ProfileViewData(
+      save: save,
+      recentSessions: sessions,
+      equippedCosmetics: equippedCosmetics,
+    );
   }
 
   @override
@@ -72,6 +80,11 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
+                    _ProfileHeader(
+                      save: data.save,
+                      equippedCosmetics: data.equippedCosmetics,
+                    ),
+                    const SizedBox(height: 16),
                     _ProfileStats(save: data.save),
                     const SizedBox(height: 16),
                     _RecentSessionsSection(sessions: data.recentSessions),
@@ -80,6 +93,51 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileHeader extends StatelessWidget {
+  const _ProfileHeader({required this.save, required this.equippedCosmetics});
+
+  final PlayerSave save;
+  final List<EquippedCosmetic> equippedCosmetics;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            LayeredAvatar(
+              playerClass: save.playerClass,
+              equippedCosmetics: equippedCosmetics,
+              size: 118,
+            ),
+            const SizedBox(width: 18),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    save.playerClass.toUpperCase(),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Level ${save.level}'),
+                  const SizedBox(height: 6),
+                  Text('${save.gold} Gold'),
+                  const SizedBox(height: 6),
+                  Text('${save.elo} Elo'),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -99,6 +157,7 @@ class _ProfileStats extends StatelessWidget {
         _StatTile(label: 'Level', value: save.level.toString()),
         _StatTile(label: 'Total XP', value: save.xp.toString()),
         _StatTile(label: 'Gold', value: save.gold.toString()),
+        _StatTile(label: 'Elo', value: save.elo.toString()),
         const _StatTile(label: 'Total Gold Spent', value: '0'),
         _StatTile(
           label: 'Total Session Minutes',
@@ -227,8 +286,13 @@ class _SessionCard extends StatelessWidget {
 }
 
 class _ProfileViewData {
-  const _ProfileViewData({required this.save, required this.recentSessions});
+  const _ProfileViewData({
+    required this.save,
+    required this.recentSessions,
+    required this.equippedCosmetics,
+  });
 
   final PlayerSave save;
   final List<GameSession> recentSessions;
+  final List<EquippedCosmetic> equippedCosmetics;
 }

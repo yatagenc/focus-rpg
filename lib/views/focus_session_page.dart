@@ -1,14 +1,17 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../data/potion_catalog.dart';
+import '../models/focus_event.dart';
 import '../models/inventory_potion.dart';
+import '../models/player_save.dart';
 import '../models/potion_definition.dart';
 import '../models/potion_effect_type.dart';
+import '../services/focus_event_service.dart';
 import '../services/inventory_service.dart';
 import '../services/save_service.dart';
+import '../widgets/focus_event_dialog.dart';
 
 class FocusSessionArguments {
   const FocusSessionArguments({
@@ -28,14 +31,16 @@ class FocusSessionPage extends StatefulWidget {
 }
 
 class _FocusSessionPageState extends State<FocusSessionPage> {
-  static const int _breakUnlockSeconds = 60;
+  static const int _breakUnlockSeconds = 30 * 60;
   static const int _baseBreakDurationSeconds = 10 * 60;
 
   final SaveService _saveService = SaveService();
   final InventoryService _inventoryService = InventoryService.instance;
+  final FocusEventService _eventService = FocusEventService();
 
   Timer? _timer;
   int? _profileId;
+  String _playerClass = '';
   List<String> _selectedPotionIds = <String>[];
   late PotionSessionEffects _sessionEffects = const PotionSessionEffects();
   DateTime? _startedAt;
@@ -50,9 +55,14 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
   bool _isStarting = false;
   bool _isUsingPotion = false;
   bool _streakBlockedByEvent = false;
-  int _failureProtectionCharges = 0;
-  int _streakProtectionCharges = 0;
   int _eventRewardBonusMinutes = 0;
+  int _eventBonusXp = 0;
+  int _eventBonusGold = 0;
+  int _completedFocusEvents = 0;
+  int _failedFocusEvents = 0;
+  int? _nextFocusEventAtMilliseconds;
+  bool _isFocusEventActive = false;
+  final List<FocusEventResult> _eventResults = <FocusEventResult>[];
   String? _eventLog;
 
   bool get _isRunning => _startedAt != null;
@@ -135,7 +145,13 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       return;
     }
 
+    final PlayerSave? save = await _saveService.getSaveById(profileId);
+    if (!mounted) {
+      return;
+    }
+
     setState(() {
+      _playerClass = save?.playerClass ?? '';
       _startedAt = DateTime.now();
       _focusResumedAt = _startedAt;
       _focusAccumulatedMilliseconds = 0;
@@ -144,9 +160,15 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       _breakStartedAt = null;
       _breakRemainingSeconds = _sessionEffects.breakDurationSeconds;
       _hasUsedBreak = false;
-      _failureProtectionCharges = _sessionEffects.failureProtectionCharges;
-      _streakProtectionCharges = _sessionEffects.streakProtectionCharges;
       _eventRewardBonusMinutes = 0;
+      _eventBonusXp = 0;
+      _eventBonusGold = 0;
+      _completedFocusEvents = 0;
+      _failedFocusEvents = 0;
+      _eventResults.clear();
+      _nextFocusEventAtMilliseconds = _eventService
+          .nextEventDeadlineMilliseconds(baseMilliseconds: 0);
+      _isFocusEventActive = false;
       _streakBlockedByEvent = false;
       _eventLog = null;
       _isStarting = false;
@@ -186,6 +208,8 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
           }
         }
       });
+
+      _maybeLaunchScheduledFocusEvent();
     });
   }
 
@@ -354,74 +378,79 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
     setState(() {
       _selectedPotionIds.add(potionId);
       _recalculatePotionEffects();
-      _failureProtectionCharges = _sessionEffects.failureProtectionCharges;
-      _streakProtectionCharges = _sessionEffects.streakProtectionCharges;
       _breakRemainingSeconds = _sessionEffects.breakDurationSeconds;
       _isUsingPotion = false;
     });
     _showSnack('${PotionCatalog.byId(potionId).name} used.');
   }
 
-  void _triggerFocusEvent() {
-    if (!_isRunning || _isBreakActive) {
+  void _maybeLaunchScheduledFocusEvent() {
+    final int? nextEventAt = _nextFocusEventAtMilliseconds;
+    if (nextEventAt == null ||
+        !_isRunning ||
+        _isBreakActive ||
+        _isFocusEventActive ||
+        _isSaving ||
+        _elapsedMilliseconds < nextEventAt) {
       return;
     }
 
-    final math.Random random = math.Random();
-    final double rareChance = (0.12 + _sessionEffects.rareEventChanceBonus)
-        .clamp(0.0, 0.75)
-        .toDouble();
-    final bool rareSuccess = random.nextDouble() < rareChance;
-    final bool success = rareSuccess || random.nextBool();
+    setState(() {
+      _isFocusEventActive = true;
+    });
+    unawaited(_launchFocusEvent());
+  }
+
+  Future<void> _launchFocusEvent() async {
+    final FocusEventChallenge challenge = _eventService.createChallenge(
+      playerClass: _playerClass,
+    );
+    final FocusEventResult result =
+        await showDialog<FocusEventResult>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) {
+            return FocusEventDialog(challenge: challenge);
+          },
+        ) ??
+        FocusEventResult(
+          challenge: challenge,
+          outcome: FocusEventOutcome.missed,
+        );
+
+    if (!mounted) {
+      return;
+    }
 
     setState(() {
-      if (success) {
-        final int bonus =
-            ((rareSuccess ? 5 : 2) * _sessionEffects.eventRewardMultiplier)
-                .round()
-                .clamp(1, 20)
-                .toInt();
-        _eventRewardBonusMinutes += bonus;
-        _eventLog = rareSuccess
-            ? 'Rare focus event succeeded: +$bonus reward minutes.'
-            : 'Focus event succeeded: +$bonus reward minutes.';
-        return;
-      }
-
-      if (_failureProtectionCharges > 0) {
-        _removeActivePotionByEffect(PotionEffectType.failureProtection);
-        _failureProtectionCharges = _sessionEffects.failureProtectionCharges;
-        _eventLog = 'Failed focus event was fully negated.';
-        return;
-      }
-
-      if (_streakProtectionCharges > 0) {
-        _removeActivePotionByEffect(PotionEffectType.streakProtection);
-        _streakProtectionCharges = _sessionEffects.streakProtectionCharges;
-      } else {
-        _streakBlockedByEvent = true;
-      }
-
-      final int penaltySeconds =
-          (60 *
-                  _sessionEffects.eventPenaltyMultiplier *
-                  _sessionEffects.idlePenaltyMultiplier *
-                  _sessionEffects.failurePenaltyMultiplier)
-              .round()
-              .clamp(0, 300)
-              .toInt();
-      _focusAccumulatedMilliseconds = math.max(
-        0,
-        _focusAccumulatedMilliseconds - (penaltySeconds * 1000),
-      );
-      _elapsedMilliseconds = math.max(
-        0,
-        _elapsedMilliseconds - (penaltySeconds * 1000),
-      );
-      _eventLog = penaltySeconds == 0
-          ? 'Failed focus event penalty was reduced to zero.'
-          : 'Focus event failed: -${penaltySeconds}s focus time.';
+      _resolveFocusEvent(result);
+      _nextFocusEventAtMilliseconds = _eventService
+          .nextEventDeadlineMilliseconds(
+            baseMilliseconds: _elapsedMilliseconds,
+          );
+      _isFocusEventActive = false;
     });
+  }
+
+  void _resolveFocusEvent(FocusEventResult result) {
+    _eventResults.add(result);
+
+    if (result.isSuccess) {
+      final int earnedGold =
+          (result.earnedGold * _sessionEffects.eventRewardMultiplier).round();
+      final int earnedXp =
+          (result.earnedXp * _sessionEffects.eventRewardMultiplier).round();
+      _completedFocusEvents += 1;
+      _eventBonusGold += earnedGold;
+      _eventBonusXp += earnedXp;
+      _eventLog = result.outcome == FocusEventOutcome.perfect
+          ? 'Perfect timing! +$earnedGold Gold'
+          : 'Success! +$earnedGold Gold';
+      return;
+    }
+
+    _failedFocusEvents += 1;
+    _eventLog = 'The moment passes...';
   }
 
   void _showSnack(String message) {
@@ -430,16 +459,12 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _removeActivePotionByEffect(PotionEffectType effectType) {
-    final int index = _selectedPotionIds.indexWhere(
-      (String potionId) =>
-          PotionCatalog.byId(potionId).effectType == effectType,
-    );
-    if (index == -1) {
-      return;
+  int? _secondsUntilNextFocusEvent() {
+    final int? nextEventAt = _nextFocusEventAtMilliseconds;
+    if (!_isRunning || nextEventAt == null) {
+      return null;
     }
-    _selectedPotionIds.removeAt(index);
-    _recalculatePotionEffects();
+    return ((nextEventAt - _elapsedMilliseconds) / 1000).ceil().clamp(0, 9999);
   }
 
   Future<bool?> _showConfirmDialog({
@@ -494,6 +519,8 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
         goldMultiplier: _sessionEffects.goldMultiplier,
         rewardBonusMinutes:
             _sessionEffects.rewardBonusMinutes + _eventRewardBonusMinutes,
+        eventBonusXp: _eventBonusXp,
+        eventBonusGold: _eventBonusGold,
         firstSessionXpBonusMultiplier:
             _sessionEffects.firstSessionXpBonusMultiplier,
         allowStreakProgress: !_streakBlockedByEvent,
@@ -552,6 +579,16 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                     alignment: Alignment.centerRight,
                     child: _TotalSessionPill(totalTimerText: totalTimerText),
                   ),
+                  const SizedBox(height: 10),
+                  _FocusEventStatusPill(
+                    secondsUntilNext: _secondsUntilNextFocusEvent(),
+                    isActive: _isFocusEventActive,
+                    completedCount: _completedFocusEvents,
+                    failedCount: _failedFocusEvents,
+                    bonusGold: _eventBonusGold,
+                    bonusXp: _eventBonusXp,
+                    formatDuration: _formatDuration,
+                  ),
                   if (_selectedPotionIds.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     _ActivePotionEffects(effects: _sessionEffects),
@@ -596,7 +633,11 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                   SizedBox(
                     height: 50,
                     child: OutlinedButton.icon(
-                      onPressed: _isRunning && !_isSaving && !_isStarting
+                      onPressed:
+                          _isRunning &&
+                              !_isSaving &&
+                              !_isStarting &&
+                              !_isFocusEventActive
                           ? _openPotionBag
                           : null,
                       icon: const Icon(Icons.inventory_2),
@@ -611,18 +652,7 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                           _isRunning &&
                               !_isSaving &&
                               !_isStarting &&
-                              !_isBreakActive
-                          ? _triggerFocusEvent
-                          : null,
-                      icon: const Icon(Icons.bolt),
-                      label: const Text('Focus Event'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 50,
-                    child: OutlinedButton.icon(
-                      onPressed: _isRunning && !_isSaving && !_isStarting
+                              !_isFocusEventActive
                           ? _addTestMinute
                           : null,
                       icon: const Icon(Icons.add),
@@ -637,7 +667,8 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                           _isRunning &&
                               !_isSaving &&
                               !_isBreakActive &&
-                              !_isStarting
+                              !_isStarting &&
+                              !_isFocusEventActive
                           ? _complete
                           : null,
                       icon: const Icon(Icons.check),
@@ -690,6 +721,9 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
     }
     if (_isBreakActive) {
       return 'Break running';
+    }
+    if (_isFocusEventActive) {
+      return 'Focus event active';
     }
     return 'Session running';
   }
@@ -853,6 +887,68 @@ class _ActivePotionEffects extends StatelessWidget {
             const SizedBox(height: 6),
             for (final String label in effects.labels.take(3))
               Text('• $label', style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FocusEventStatusPill extends StatelessWidget {
+  const _FocusEventStatusPill({
+    required this.secondsUntilNext,
+    required this.isActive,
+    required this.completedCount,
+    required this.failedCount,
+    required this.bonusGold,
+    required this.bonusXp,
+    required this.formatDuration,
+  });
+
+  final int? secondsUntilNext;
+  final bool isActive;
+  final int completedCount;
+  final int failedCount;
+  final int bonusGold;
+  final int bonusXp;
+  final String Function(int totalSeconds) formatDuration;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final int? next = secondsUntilNext;
+    final String status = isActive
+        ? 'Focus event active'
+        : next == null
+        ? 'Events pending'
+        : 'Next event ${formatDuration(next)}';
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Row(
+          children: [
+            Icon(Icons.bolt, size: 18, color: colors.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                status,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            Text(
+              '$completedCount / $failedCount  +$bonusGold G  +$bonusXp XP',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ],
         ),
       ),

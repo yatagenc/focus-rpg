@@ -7,6 +7,7 @@ class PlayerSave {
     required this.level,
     required this.xp,
     required this.gold,
+    required this.elo,
     required this.createdAt,
     this.lastPlayedAt,
     required this.totalStudyMinutes,
@@ -20,6 +21,7 @@ class PlayerSave {
   final int level;
   final int xp;
   final int gold;
+  final int elo;
   final String createdAt;
   final String? lastPlayedAt;
   final int totalStudyMinutes;
@@ -34,6 +36,7 @@ class PlayerSave {
       level: profile.profileLevel,
       xp: profile.profileXp,
       gold: profile.profileGold,
+      elo: profile.profileElo,
       createdAt: profile.profileCreatedAt,
       lastPlayedAt: profile.profileLastPlayedAt,
       totalStudyMinutes: profile.profileTotalStudyMinutes,
@@ -50,6 +53,7 @@ class PlayerSave {
       level: _readInt(map, 'profile_level', fallback: 1),
       xp: _readInt(map, 'profile_xp'),
       gold: _readInt(map, 'profile_gold'),
+      elo: _readInt(map, 'profile_elo'),
       createdAt: _readString(map, 'profile_created_at'),
       lastPlayedAt: map['profile_last_played_at'] as String?,
       totalStudyMinutes: _readInt(map, 'profile_total_study_minutes'),
@@ -65,6 +69,7 @@ class PlayerSave {
     int? level,
     int? xp,
     int? gold,
+    int? elo,
     String? createdAt,
     String? lastPlayedAt,
     int? totalStudyMinutes,
@@ -78,6 +83,7 @@ class PlayerSave {
       level: level ?? this.level,
       xp: xp ?? this.xp,
       gold: gold ?? this.gold,
+      elo: elo ?? this.elo,
       createdAt: createdAt ?? this.createdAt,
       lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
       totalStudyMinutes: totalStudyMinutes ?? this.totalStudyMinutes,
@@ -95,6 +101,7 @@ class PlayerSave {
       'profile_level': level,
       'profile_xp': xp,
       'profile_gold': gold,
+      'profile_elo': elo,
       'profile_created_at': createdAt,
       'profile_last_played_at': lastPlayedAt,
       'profile_total_study_minutes': totalStudyMinutes,

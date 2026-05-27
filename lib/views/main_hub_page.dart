@@ -4,6 +4,7 @@ import '../core/routes.dart';
 import '../core/progression.dart';
 import '../models/player_save.dart';
 import '../services/save_service.dart';
+import '../widgets/layered_avatar.dart';
 
 class MainHubPage extends StatefulWidget {
   const MainHubPage({super.key});
@@ -164,7 +165,11 @@ class _MainHubPageState extends State<MainHubPage> {
                         icon: Icons.checkroom,
                         label: 'Threads',
                         onPressed: () {
-                          Navigator.pushNamed(context, AppRoutes.threadShop);
+                          Navigator.pushNamed(
+                            context,
+                            AppRoutes.threadShop,
+                            arguments: save.profileId,
+                          ).then((_) => _reload());
                         },
                       ),
                       Positioned(
@@ -352,22 +357,9 @@ class _ProfileSummary extends StatelessWidget {
           Align(
             alignment: Alignment.centerRight,
             child: InkWell(
-              customBorder: const CircleBorder(),
+              borderRadius: BorderRadius.circular(999),
               onTap: onProfilePressed,
-              child: CircleAvatar(
-                radius: 26,
-                backgroundColor: const Color(0xFFE3A704),
-                child: Text(
-                  save.playerClass.isEmpty
-                      ? '?'
-                      : save.playerClass.substring(0, 1).toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
+              child: LayeredAvatar(playerClass: save.playerClass, size: 58),
             ),
           ),
           const SizedBox(height: 10),
@@ -398,6 +390,14 @@ class _ProfileSummary extends StatelessWidget {
             '${save.gold} Gold',
             textAlign: TextAlign.right,
             style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${save.elo} Elo',
+            textAlign: TextAlign.right,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 10),
           SizedBox(

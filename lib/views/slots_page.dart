@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/routes.dart';
 import '../models/player_save.dart';
 import '../services/save_service.dart';
+import '../widgets/layered_avatar.dart';
 
 class SlotsPage extends StatefulWidget {
   const SlotsPage({super.key});
@@ -137,6 +138,16 @@ class _SlotCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
+            SizedBox(
+              width: 104,
+              child: currentSave == null
+                  ? const Icon(Icons.person_add, size: 54)
+                  : LayeredAvatar(
+                      playerClass: currentSave.playerClass,
+                      size: 104,
+                    ),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
