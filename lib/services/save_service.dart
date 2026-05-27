@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
 
 import '../core/progression.dart';
+import '../core/elo.dart';
 import '../core/streak.dart';
 import '../data/models/game_session.dart';
+import '../data/models/equipped_cosmetic.dart';
+import '../data/models/owned_cosmetic.dart';
 import '../data/repositories/game_repository.dart';
 import '../models/player_save.dart';
 import 'web_save_storage_stub.dart'
@@ -61,6 +64,7 @@ class SaveService {
         level: 1,
         xp: 0,
         gold: 0,
+        elo: 0,
         createdAt: DateTime.now().toIso8601String(),
         totalStudyMinutes: 0,
         totalCompletedSessions: 0,
@@ -126,6 +130,7 @@ class SaveService {
       final int earnedXp = rewards.earnedXp + eventBonusXp;
       final int earnedGold = rewards.earnedGold + eventBonusGold;
       final int nextXp = currentSave.xp + earnedXp;
+      final int nextLevel = progressionSystem.getLevelFromTotalXp(nextXp).level;
       final StreakState nextStreak = calculateNextStreak(
         currentCount: currentSave.streakDays,
         lastCompletedOn: currentSave.lastStreakDate,
@@ -134,8 +139,16 @@ class SaveService {
       );
       final PlayerSave updatedSave = currentSave.copyWith(
         xp: nextXp,
-        level: progressionSystem.getLevelFromTotalXp(nextXp).level,
+        level: nextLevel,
         gold: currentSave.gold + earnedGold,
+        elo:
+            currentSave.elo +
+            EloSystem.sessionElo(
+              durationMinutes: durationMinutes,
+              xpEarned: earnedXp,
+              goldEarned: earnedGold,
+              levelsGained: nextLevel - currentSave.level,
+            ),
         lastPlayedAt: endedAt,
         totalStudyMinutes: currentSave.totalStudyMinutes + durationMinutes,
         totalCompletedSessions: currentSave.totalCompletedSessions + 1,
@@ -179,6 +192,7 @@ class SaveService {
 
       final PlayerSave updatedSave = currentSave.copyWith(
         gold: currentSave.gold - amount,
+        elo: currentSave.elo + EloSystem.goldSpentElo(amount),
       );
       _webSaves[profileId] = updatedSave;
       _persistWebSaves();
@@ -204,6 +218,88 @@ class SaveService {
       profileId: profileId,
       limit: limit,
     );
+  }
+
+  Future<List<EquippedCosmetic>> getEquippedCosmeticsForProfile({
+    required int profileId,
+  }) async {
+    if (_useMemoryStore) {
+      return <EquippedCosmetic>[];
+    }
+
+    return _repository.getEquippedCosmeticsForProfile(profileId);
+  }
+
+  Future<List<OwnedCosmetic>> getOwnedCosmeticsForProfile({
+    required int profileId,
+  }) async {
+    if (_useMemoryStore) {
+      return <OwnedCosmetic>[];
+    }
+
+    await _repository.unlockEligibleFrameCosmeticsForProfile(profileId);
+    return _repository.getOwnedCosmeticsForProfile(profileId);
+  }
+
+  Future<void> equipCosmetic({
+    required int profileId,
+    required String slotType,
+    required int cosmeticId,
+  }) async {
+    if (_useMemoryStore) {
+      return;
+    }
+
+    await _repository.equipCosmetic(
+      profileId: profileId,
+      slotType: slotType,
+      cosmeticId: cosmeticId,
+    );
+  }
+
+  Future<void> unlockCosmeticForProfile({
+    required int profileId,
+    required int cosmeticId,
+  }) async {
+    if (_useMemoryStore) {
+      return;
+    }
+
+    await _repository.unlockCosmeticForProfile(
+      profileId: profileId,
+      cosmeticId: cosmeticId,
+    );
+  }
+
+  Future<PlayerSave> purchaseCosmeticForProfile({
+    required int profileId,
+    required int cosmeticId,
+    required int priceGold,
+  }) async {
+    if (_useMemoryStore) {
+      _loadWebSavesIfNeeded();
+      final PlayerSave? currentSave = _webSaves[profileId];
+      if (currentSave == null) {
+        throw StateError('Profile does not exist.');
+      }
+      if (currentSave.gold < priceGold) {
+        throw StateError('Not enough gold.');
+      }
+      final PlayerSave updatedSave = currentSave.copyWith(
+        gold: currentSave.gold - priceGold,
+        elo: currentSave.elo + EloSystem.goldSpentElo(priceGold),
+      );
+      _webSaves[profileId] = updatedSave;
+      _persistWebSaves();
+      return updatedSave;
+    }
+
+    final profile = await _repository.purchaseCosmeticForProfile(
+      profileId: profileId,
+      cosmeticId: cosmeticId,
+      priceGold: priceGold,
+    );
+    return PlayerSave.fromProfile(profile);
   }
 
   void _loadWebSavesIfNeeded() {

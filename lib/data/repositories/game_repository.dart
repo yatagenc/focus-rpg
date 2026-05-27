@@ -1,7 +1,11 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../../core/progression.dart';
+import '../../core/elo.dart';
 import '../../core/streak.dart';
+import '../../data/cosmetic_catalog.dart';
+import '../../models/cosmetic_definition.dart';
+import '../../models/cosmetic_type.dart';
 import '../database/app_database.dart';
 import '../database/database_schema.dart';
 import '../models/equipped_cosmetic.dart';
@@ -58,6 +62,12 @@ class GameRepository {
           'Cannot create more than 3 profiles.',
         );
       }
+
+      await _grantDefaultCosmetics(
+        txn: txn,
+        profileId: profileId,
+        timestamp: timestamp,
+      );
 
       final List<Map<String, Object?>> rows = await txn.query(
         DatabaseSchema.profileTable,
@@ -137,6 +147,14 @@ class GameRepository {
       final int goldEarned = rewards.earnedGold + eventBonusGold;
       final int nextXp = currentProfile.profileXp + xpEarned;
       final int nextLevel = progressionSystem.getLevelFromTotalXp(nextXp).level;
+      final int nextElo =
+          currentProfile.profileElo +
+          EloSystem.sessionElo(
+            durationMinutes: durationMinutes,
+            xpEarned: xpEarned,
+            goldEarned: goldEarned,
+            levelsGained: nextLevel - currentProfile.profileLevel,
+          );
       final StreakState nextStreak = calculateNextStreak(
         currentCount: currentProfile.profileStreakDays,
         lastCompletedOn: currentProfile.profileLastStreakDate,
@@ -164,6 +182,7 @@ class GameRepository {
           'profile_xp': nextXp,
           'profile_level': nextLevel,
           'profile_gold': currentProfile.profileGold + goldEarned,
+          'profile_elo': nextElo,
           'profile_last_played_at': endTimestamp,
           'profile_total_study_minutes':
               currentProfile.profileTotalStudyMinutes + durationMinutes,
@@ -174,6 +193,13 @@ class GameRepository {
         },
         where: 'profile_id = ?',
         whereArgs: <Object?>[profileId],
+      );
+
+      await _unlockEligibleFrameCosmetics(
+        txn: txn,
+        profileId: profileId,
+        elo: nextElo,
+        timestamp: endTimestamp,
       );
 
       final List<Map<String, Object?>> updatedRows = await txn.query(
@@ -227,11 +253,23 @@ class GameRepository {
         throw const DatabaseValidationException('Not enough gold.');
       }
 
+      final int nextElo =
+          currentProfile.profileElo + EloSystem.goldSpentElo(amount);
       await txn.update(
         DatabaseSchema.profileTable,
-        <String, Object?>{'profile_gold': currentProfile.profileGold - amount},
+        <String, Object?>{
+          'profile_gold': currentProfile.profileGold - amount,
+          'profile_elo': nextElo,
+        },
         where: 'profile_id = ?',
         whereArgs: <Object?>[profileId],
+      );
+
+      await _unlockEligibleFrameCosmetics(
+        txn: txn,
+        profileId: profileId,
+        elo: nextElo,
+        timestamp: DateTime.now().toIso8601String(),
       );
 
       final List<Map<String, Object?>> updatedRows = await txn.query(
@@ -372,6 +410,75 @@ class GameRepository {
     );
   }
 
+  Future<Profile> purchaseCosmeticForProfile({
+    required int profileId,
+    required int cosmeticId,
+    required int priceGold,
+    String? unlockedAt,
+  }) async {
+    _validateNonNegative(priceGold, 'price_gold');
+
+    final Database db = await _database.database;
+    return db.transaction<Profile>((Transaction txn) async {
+      final List<Map<String, Object?>> profileRows = await txn.query(
+        DatabaseSchema.profileTable,
+        where: 'profile_id = ?',
+        whereArgs: <Object?>[profileId],
+        limit: 1,
+      );
+      if (profileRows.isEmpty) {
+        throw const DatabaseValidationException('Profile does not exist.');
+      }
+
+      final bool cosmeticExists = (await txn.query(
+        DatabaseSchema.cosmeticsTable,
+        columns: <String>['cosmetic_id'],
+        where: 'cosmetic_id = ?',
+        whereArgs: <Object?>[cosmeticId],
+        limit: 1,
+      )).isNotEmpty;
+      if (!cosmeticExists) {
+        throw const DatabaseValidationException('Cosmetic does not exist.');
+      }
+
+      final Profile currentProfile = Profile.fromMap(profileRows.first);
+      if (currentProfile.profileGold < priceGold) {
+        throw const DatabaseValidationException('Not enough gold.');
+      }
+
+      final int nextElo =
+          currentProfile.profileElo + EloSystem.goldSpentElo(priceGold);
+      await txn.update(
+        DatabaseSchema.profileTable,
+        <String, Object?>{
+          'profile_gold': currentProfile.profileGold - priceGold,
+          'profile_elo': nextElo,
+        },
+        where: 'profile_id = ?',
+        whereArgs: <Object?>[profileId],
+      );
+
+      await txn.insert(
+        DatabaseSchema.ownedCosmeticsTable,
+        OwnedCosmetic(
+          profileId: profileId,
+          cosmeticId: cosmeticId,
+          unlockedAt: unlockedAt ?? DateTime.now().toIso8601String(),
+        ).toMap(),
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+
+      final List<Map<String, Object?>> updatedRows = await txn.query(
+        DatabaseSchema.profileTable,
+        where: 'profile_id = ?',
+        whereArgs: <Object?>[profileId],
+        limit: 1,
+      );
+
+      return Profile.fromMap(updatedRows.first);
+    });
+  }
+
   Future<List<OwnedCosmetic>> getOwnedCosmeticsForProfile(int profileId) async {
     final Database db = await _database.database;
     final List<Map<String, Object?>> rows = await db.query(
@@ -434,6 +541,28 @@ class GameRepository {
     return rows.map(EquippedCosmetic.fromMap).toList();
   }
 
+  Future<void> unlockEligibleFrameCosmeticsForProfile(int profileId) async {
+    final Database db = await _database.database;
+    await db.transaction((Transaction txn) async {
+      final List<Map<String, Object?>> profileRows = await txn.query(
+        DatabaseSchema.profileTable,
+        columns: <String>['profile_elo'],
+        where: 'profile_id = ?',
+        whereArgs: <Object?>[profileId],
+        limit: 1,
+      );
+      if (profileRows.isEmpty) {
+        throw const DatabaseValidationException('Profile does not exist.');
+      }
+      await _unlockEligibleFrameCosmetics(
+        txn: txn,
+        profileId: profileId,
+        elo: profileRows.first['profile_elo'] as int? ?? 0,
+        timestamp: DateTime.now().toIso8601String(),
+      );
+    });
+  }
+
   void _validateNonNegative(int value, String field) {
     if (value < 0) {
       throw DatabaseValidationException('$field cannot be negative.');
@@ -445,6 +574,64 @@ class GameRepository {
     final String month = value.month.toString().padLeft(2, '0');
     final String day = value.day.toString().padLeft(2, '0');
     return '$year-$month-$day';
+  }
+
+  Future<void> _grantDefaultCosmetics({
+    required Transaction txn,
+    required int profileId,
+    required String timestamp,
+  }) async {
+    for (final int cosmeticId in CosmeticCatalog.defaultCosmeticIds) {
+      await txn.insert(
+        DatabaseSchema.ownedCosmeticsTable,
+        OwnedCosmetic(
+          profileId: profileId,
+          cosmeticId: cosmeticId,
+          unlockedAt: timestamp,
+        ).toMap(),
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+
+    final Map<CosmeticType, int> defaultEquipment = <CosmeticType, int>{
+      CosmeticType.hat: CosmeticCatalog.defaultHatId,
+      CosmeticType.torso: CosmeticCatalog.defaultTorsoId,
+      CosmeticType.frame: CosmeticCatalog.defaultWoodFrameId,
+    };
+
+    for (final MapEntry<CosmeticType, int> entry in defaultEquipment.entries) {
+      await txn.insert(
+        DatabaseSchema.equippedCosmeticsTable,
+        EquippedCosmetic(
+          profileId: profileId,
+          slotType: entry.key.storageKey,
+          cosmeticId: entry.value,
+          equippedAt: timestamp,
+        ).toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+  }
+
+  Future<void> _unlockEligibleFrameCosmetics({
+    required Transaction txn,
+    required int profileId,
+    required int elo,
+    required String timestamp,
+  }) async {
+    for (final CosmeticDefinition frame in CosmeticCatalog.framesUnlockedAtElo(
+      elo,
+    )) {
+      await txn.insert(
+        DatabaseSchema.ownedCosmeticsTable,
+        OwnedCosmetic(
+          profileId: profileId,
+          cosmeticId: frame.cosmeticId,
+          unlockedAt: timestamp,
+        ).toMap(),
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
   }
 }
 

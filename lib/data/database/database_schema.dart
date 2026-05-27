@@ -2,7 +2,7 @@ class DatabaseSchema {
   DatabaseSchema._();
 
   static const String databaseName = 'focus_rpg.db';
-  static const int databaseVersion = 4;
+  static const int databaseVersion = 7;
 
   static const String profileTable = 'Profile';
   static const String sessionTable = 'Session';
@@ -23,6 +23,7 @@ class DatabaseSchema {
         profile_xp INTEGER NOT NULL DEFAULT 0 CHECK (profile_xp >= 0),
         profile_level INTEGER NOT NULL DEFAULT 1 CHECK (profile_level >= 1),
         profile_gold INTEGER NOT NULL DEFAULT 0 CHECK (profile_gold >= 0),
+        profile_elo INTEGER NOT NULL DEFAULT 0 CHECK (profile_elo >= 0),
         profile_created_at TEXT NOT NULL,
         profile_last_played_at TEXT,
         profile_total_study_minutes INTEGER NOT NULL DEFAULT 0 CHECK (profile_total_study_minutes >= 0),
@@ -125,17 +126,41 @@ class DatabaseSchema {
         (2, 'Energy Elixir', 'consumable'),
         (3, 'Quest Compass', 'utility')
       ''',
-      '''
-      INSERT OR IGNORE INTO $cosmeticsTable (cosmetic_id, cosmetic_name, cosmetic_type, class_restriction)
-      VALUES
-        (1, 'Apprentice Hood', 'head', 'mage'),
-        (2, 'Royal Crest', 'head', 'knight'),
-        (3, 'Forest Cloak', 'body', 'archer'),
-        (4, 'Shadow Mask', 'head', 'thief'),
-        (5, 'Traveler Cape', 'body', 'all')
-      ''',
+      seedCosmeticsStatement(),
       seedAppSettingsStatement(),
     ];
+  }
+
+  static String seedCosmeticsStatement() {
+    return '''
+      INSERT OR IGNORE INTO $cosmeticsTable (cosmetic_id, cosmetic_name, cosmetic_type, class_restriction)
+      VALUES
+        (1001, 'Simple Cloth Hat', 'hat', 'all'),
+        (1101, 'Hogwarts Sorting Hat', 'hat', 'mage'),
+        (1102, 'Crystal Wizard Hat', 'hat', 'mage'),
+        (1201, 'Gothic Knight Helm', 'hat', 'knight'),
+        (1202, 'Lionguard Knight Helm', 'hat', 'knight'),
+        (1301, 'Mirkwood Elven Hood', 'hat', 'archer'),
+        (1302, 'Crystal Scout Crown', 'hat', 'archer'),
+        (1401, 'Ezio''s White Hood', 'hat', 'thief'),
+        (1402, 'Rust Leather Skull Hood', 'hat', 'thief'),
+        (2001, 'Plain Traveler Tunic', 'torso', 'all'),
+        (2101, 'Hogwarts Robe', 'torso', 'mage'),
+        (2102, 'Crystal Wizard Robe', 'torso', 'mage'),
+        (2201, 'Gothic Plate Armor', 'torso', 'knight'),
+        (2202, 'Lionguard Plate Armor', 'torso', 'knight'),
+        (2301, 'Legolas Elven Armor', 'torso', 'archer'),
+        (2302, 'Gray Crystal Scout Armor', 'torso', 'archer'),
+        (2401, 'Auditore Robe', 'torso', 'thief'),
+        (2402, 'Rust Leather Skull Vest', 'torso', 'thief'),
+        (3001, 'Wooden Profile Frame', 'frame', 'all'),
+        (3002, 'Bronze Profile Frame', 'frame', 'all'),
+        (3003, 'Silver Profile Frame', 'frame', 'all'),
+        (3004, 'Gold Profile Frame', 'frame', 'all'),
+        (3005, 'Platinum Profile Frame', 'frame', 'all'),
+        (3006, 'Emerald Profile Frame', 'frame', 'all'),
+        (3007, 'Diamond Profile Frame', 'frame', 'all')
+      ''';
   }
 
   static String createProfilePotionTableStatement() {
@@ -188,6 +213,22 @@ class DatabaseSchema {
       '''
       ALTER TABLE $profileTable
       ADD COLUMN profile_last_streak_date TEXT
+      ''',
+    ];
+  }
+
+  static List<String> addProfileEloColumnStatements() {
+    return <String>[
+      '''
+      ALTER TABLE $profileTable
+      ADD COLUMN profile_elo INTEGER NOT NULL DEFAULT 0 CHECK (profile_elo >= 0)
+      ''',
+      '''
+      UPDATE $profileTable
+      SET profile_elo =
+        CAST(profile_xp / 10 AS INTEGER) +
+        profile_gold +
+        (profile_total_completed_sessions * 50)
       ''',
     ];
   }

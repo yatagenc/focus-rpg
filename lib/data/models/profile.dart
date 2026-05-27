@@ -5,6 +5,7 @@ class Profile {
     required this.profileXp,
     required this.profileLevel,
     required this.profileGold,
+    required this.profileElo,
     required this.profileCreatedAt,
     required this.profileLastPlayedAt,
     required this.profileTotalStudyMinutes,
@@ -18,6 +19,7 @@ class Profile {
   final int profileXp;
   final int profileLevel;
   final int profileGold;
+  final int profileElo;
   final String profileCreatedAt;
   final String? profileLastPlayedAt;
   final int profileTotalStudyMinutes;
@@ -32,6 +34,7 @@ class Profile {
       profileXp: map['profile_xp'] as int,
       profileLevel: map['profile_level'] as int,
       profileGold: map['profile_gold'] as int,
+      profileElo: map['profile_elo'] as int? ?? 0,
       profileCreatedAt: map['profile_created_at'] as String,
       profileLastPlayedAt: map['profile_last_played_at'] as String?,
       profileTotalStudyMinutes: map['profile_total_study_minutes'] as int,
@@ -49,6 +52,7 @@ class Profile {
       'profile_xp': profileXp,
       'profile_level': profileLevel,
       'profile_gold': profileGold,
+      'profile_elo': profileElo,
       'profile_created_at': profileCreatedAt,
       'profile_last_played_at': profileLastPlayedAt,
       'profile_total_study_minutes': profileTotalStudyMinutes,
