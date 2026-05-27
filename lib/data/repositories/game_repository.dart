@@ -95,11 +95,15 @@ class GameRepository {
     double xpMultiplier = 1.0,
     double goldMultiplier = 1.0,
     int rewardBonusMinutes = 0,
+    int eventBonusXp = 0,
+    int eventBonusGold = 0,
     double firstSessionXpBonusMultiplier = 1.0,
     bool allowStreakProgress = true,
   }) async {
     _validateNonNegative(durationMinutes, 'duration_minutes');
     _validateNonNegative(rewardBonusMinutes, 'reward_bonus_minutes');
+    _validateNonNegative(eventBonusXp, 'event_bonus_xp');
+    _validateNonNegative(eventBonusGold, 'event_bonus_gold');
 
     final Database db = await _database.database;
     final String endTimestamp = endedAt ?? DateTime.now().toIso8601String();
@@ -129,8 +133,8 @@ class GameRepository {
         xpMultiplier: effectiveXpMultiplier,
         goldMultiplier: goldMultiplier,
       );
-      final int xpEarned = rewards.earnedXp;
-      final int goldEarned = rewards.earnedGold;
+      final int xpEarned = rewards.earnedXp + eventBonusXp;
+      final int goldEarned = rewards.earnedGold + eventBonusGold;
       final int nextXp = currentProfile.profileXp + xpEarned;
       final int nextLevel = progressionSystem.getLevelFromTotalXp(nextXp).level;
       final StreakState nextStreak = calculateNextStreak(

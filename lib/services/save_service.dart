@@ -100,6 +100,8 @@ class SaveService {
     double xpMultiplier = 1.0,
     double goldMultiplier = 1.0,
     int rewardBonusMinutes = 0,
+    int eventBonusXp = 0,
+    int eventBonusGold = 0,
     double firstSessionXpBonusMultiplier = 1.0,
     bool allowStreakProgress = true,
   }) async {
@@ -121,7 +123,9 @@ class SaveService {
         xpMultiplier: effectiveXpMultiplier,
         goldMultiplier: goldMultiplier,
       );
-      final int nextXp = currentSave.xp + rewards.earnedXp;
+      final int earnedXp = rewards.earnedXp + eventBonusXp;
+      final int earnedGold = rewards.earnedGold + eventBonusGold;
+      final int nextXp = currentSave.xp + earnedXp;
       final StreakState nextStreak = calculateNextStreak(
         currentCount: currentSave.streakDays,
         lastCompletedOn: currentSave.lastStreakDate,
@@ -131,7 +135,7 @@ class SaveService {
       final PlayerSave updatedSave = currentSave.copyWith(
         xp: nextXp,
         level: progressionSystem.getLevelFromTotalXp(nextXp).level,
-        gold: currentSave.gold + rewards.earnedGold,
+        gold: currentSave.gold + earnedGold,
         lastPlayedAt: endedAt,
         totalStudyMinutes: currentSave.totalStudyMinutes + durationMinutes,
         totalCompletedSessions: currentSave.totalCompletedSessions + 1,
@@ -151,6 +155,8 @@ class SaveService {
       xpMultiplier: xpMultiplier,
       goldMultiplier: goldMultiplier,
       rewardBonusMinutes: rewardBonusMinutes,
+      eventBonusXp: eventBonusXp,
+      eventBonusGold: eventBonusGold,
       firstSessionXpBonusMultiplier: firstSessionXpBonusMultiplier,
       allowStreakProgress: allowStreakProgress,
     );
