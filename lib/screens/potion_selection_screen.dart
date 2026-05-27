@@ -22,15 +22,23 @@ class _PotionSelectionScreenState extends State<PotionSelectionScreen> {
   final List<String> _selectedPotionIds = <String>[];
 
   int? _profileId;
+  Future<List<InventoryPotion>>? _inventoryFuture;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _profileId ??= ModalRoute.of(context)?.settings.arguments as int?;
+    if (_profileId == null) {
+      _profileId = ModalRoute.of(context)?.settings.arguments as int?;
+      final int? profileId = _profileId;
+      if (profileId != null) {
+        _inventoryFuture = _inventoryService.getInventoryPotions(
+          profileId: profileId,
+        );
+      }
+    }
   }
 
-  void _togglePotion(String potionId) {
-    final Map<String, int> inventoryCounts = _inventoryCounts();
+  void _togglePotion(String potionId, Map<String, int> inventoryCounts) {
     final int available = inventoryCounts[potionId] ?? 0;
     final int selected = _selectedPotionIds
         .where((String selectedId) => selectedId == potionId)
@@ -41,7 +49,10 @@ class _PotionSelectionScreenState extends State<PotionSelectionScreen> {
       return;
     }
 
-    final List<String> nextSelection = <String>[..._selectedPotionIds, potionId];
+    final List<String> nextSelection = <String>[
+      ..._selectedPotionIds,
+      potionId,
+    ];
     final PotionLoadoutValidationResult validation = _inventoryService
         .validateSessionPotionLoadout(nextSelection);
 
@@ -89,15 +100,9 @@ class _PotionSelectionScreenState extends State<PotionSelectionScreen> {
     );
   }
 
-  Map<String, int> _inventoryCounts() {
-    final int? profileId = _profileId;
-    if (profileId == null) {
-      return <String, int>{};
-    }
-
+  Map<String, int> _inventoryCounts(List<InventoryPotion> potions) {
     return <String, int>{
-      for (final InventoryPotion potion
-          in _inventoryService.getInventoryPotions(profileId: profileId))
+      for (final InventoryPotion potion in potions)
         potion.potionId: potion.quantity,
     };
   }
@@ -111,75 +116,94 @@ class _PotionSelectionScreenState extends State<PotionSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     final int? profileId = _profileId;
-    final Map<String, int> quantities = _inventoryCounts();
-    final List<PotionDefinition> ownedPotions = PotionCatalog.potions
-        .where((PotionDefinition potion) => (quantities[potion.id] ?? 0) > 0)
-        .toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Session Preparation')),
       body: profileId == null
           ? const Center(child: Text('Profile not found.'))
-          : SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                    child: SelectedPotionLoadout(
-                      selectedPotionIds: _selectedPotionIds,
-                      onRemove: _removePotion,
-                    ),
-                  ),
-                  Expanded(
-                    child: ownedPotions.isEmpty
-                        ? const Center(child: Text('No potions available.'))
-                        : ListView.separated(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: ownedPotions.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: 12),
-                            itemBuilder: (context, index) {
-                              final PotionDefinition definition =
-                                  ownedPotions[index];
-                              final int selectedCount = _selectedPotionIds
-                                  .where(
-                                    (String potionId) =>
-                                        potionId == definition.id,
-                                  )
-                                  .length;
+          : FutureBuilder<List<InventoryPotion>>(
+              future: _inventoryFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-                              return PotionCard(
-                                definition: definition,
-                                quantity: quantities[definition.id] ?? 0,
-                                selectedCount: selectedCount,
-                                onTap: () => showPotionDetailSheet(
-                                  context: context,
-                                  definition: definition,
-                                  quantity: quantities[definition.id] ?? 0,
-                                ),
-                                trailing: IconButton.filledTonal(
-                                  tooltip: 'Select',
-                                  onPressed: () => _togglePotion(definition.id),
-                                  icon: const Icon(Icons.add),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: FilledButton.icon(
-                        onPressed: _startSession,
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text('Start Session'),
+                final Map<String, int> quantities = _inventoryCounts(
+                  snapshot.data ?? const <InventoryPotion>[],
+                );
+                final List<PotionDefinition> ownedPotions = PotionCatalog
+                    .potions
+                    .where(
+                      (PotionDefinition potion) =>
+                          (quantities[potion.id] ?? 0) > 0,
+                    )
+                    .toList();
+
+                return SafeArea(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: SelectedPotionLoadout(
+                          selectedPotionIds: _selectedPotionIds,
+                          onRemove: _removePotion,
+                        ),
                       ),
-                    ),
+                      Expanded(
+                        child: ownedPotions.isEmpty
+                            ? const Center(child: Text('No potions available.'))
+                            : ListView.separated(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: ownedPotions.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(height: 12),
+                                itemBuilder: (context, index) {
+                                  final PotionDefinition definition =
+                                      ownedPotions[index];
+                                  final int selectedCount = _selectedPotionIds
+                                      .where(
+                                        (String potionId) =>
+                                            potionId == definition.id,
+                                      )
+                                      .length;
+
+                                  return PotionCard(
+                                    definition: definition,
+                                    quantity: quantities[definition.id] ?? 0,
+                                    selectedCount: selectedCount,
+                                    onTap: () => showPotionDetailSheet(
+                                      context: context,
+                                      definition: definition,
+                                      quantity: quantities[definition.id] ?? 0,
+                                    ),
+                                    trailing: IconButton.filledTonal(
+                                      tooltip: 'Select',
+                                      onPressed: () => _togglePotion(
+                                        definition.id,
+                                        quantities,
+                                      ),
+                                      icon: const Icon(Icons.add),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 54,
+                          child: FilledButton.icon(
+                            onPressed: _startSession,
+                            icon: const Icon(Icons.play_arrow),
+                            label: const Text('Start Session'),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                );
+              },
             ),
     );
   }

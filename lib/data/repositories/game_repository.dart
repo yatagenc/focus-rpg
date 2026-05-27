@@ -95,6 +95,8 @@ class GameRepository {
     double xpMultiplier = 1.0,
     double goldMultiplier = 1.0,
     int rewardBonusMinutes = 0,
+    double firstSessionXpBonusMultiplier = 1.0,
+    bool allowStreakProgress = true,
   }) async {
     _validateNonNegative(durationMinutes, 'duration_minutes');
     _validateNonNegative(rewardBonusMinutes, 'reward_bonus_minutes');
@@ -102,13 +104,6 @@ class GameRepository {
     final Database db = await _database.database;
     final String endTimestamp = endedAt ?? DateTime.now().toIso8601String();
     final String startTimestamp = startedAt ?? endTimestamp;
-    final SessionRewards rewards = progressionSystem.calculateSessionRewards(
-      durationMinutes + rewardBonusMinutes,
-      xpMultiplier: xpMultiplier,
-      goldMultiplier: goldMultiplier,
-    );
-    final int xpEarned = rewards.earnedXp;
-    final int goldEarned = rewards.earnedGold;
 
     return db.transaction<Profile>((Transaction txn) async {
       final List<Map<String, Object?>> profileRows = await txn.query(
@@ -123,13 +118,26 @@ class GameRepository {
       }
 
       final Profile currentProfile = Profile.fromMap(profileRows.first);
+      final DateTime completedAt = DateTime.parse(endTimestamp);
+      final bool isFirstSessionToday =
+          currentProfile.profileLastStreakDate != _formatDateOnly(completedAt);
+      final double effectiveXpMultiplier =
+          xpMultiplier *
+          (isFirstSessionToday ? firstSessionXpBonusMultiplier : 1.0);
+      final SessionRewards rewards = progressionSystem.calculateSessionRewards(
+        durationMinutes + rewardBonusMinutes,
+        xpMultiplier: effectiveXpMultiplier,
+        goldMultiplier: goldMultiplier,
+      );
+      final int xpEarned = rewards.earnedXp;
+      final int goldEarned = rewards.earnedGold;
       final int nextXp = currentProfile.profileXp + xpEarned;
       final int nextLevel = progressionSystem.getLevelFromTotalXp(nextXp).level;
       final StreakState nextStreak = calculateNextStreak(
         currentCount: currentProfile.profileStreakDays,
         lastCompletedOn: currentProfile.profileLastStreakDate,
-        completedAt: DateTime.parse(endTimestamp),
-        durationMinutes: durationMinutes,
+        completedAt: completedAt,
+        durationMinutes: allowStreakProgress ? durationMinutes : 0,
       );
 
       await txn.insert(
@@ -426,6 +434,13 @@ class GameRepository {
     if (value < 0) {
       throw DatabaseValidationException('$field cannot be negative.');
     }
+  }
+
+  String _formatDateOnly(DateTime value) {
+    final String year = value.year.toString().padLeft(4, '0');
+    final String month = value.month.toString().padLeft(2, '0');
+    final String day = value.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 }
 

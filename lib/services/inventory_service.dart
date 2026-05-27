@@ -1,18 +1,38 @@
+import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
+
+import '../data/database/app_database.dart';
+import '../data/database/database_schema.dart';
 import '../data/potion_catalog.dart';
 import '../models/inventory_potion.dart';
 import '../models/potion_definition.dart';
 import '../models/potion_rarity.dart';
 
 class InventoryService {
-  InventoryService._();
+  InventoryService._({bool? useMemoryStore})
+    : _useMemoryStore = useMemoryStore ?? kIsWeb;
+
+  factory InventoryService.memory() {
+    return InventoryService._(useMemoryStore: true);
+  }
 
   static final InventoryService instance = InventoryService._();
 
-  final Map<int, Map<String, int>> _inventoryByProfile =
+  final bool _useMemoryStore;
+  final Map<int, Map<String, int>> _memoryInventoryByProfile =
       <int, Map<String, int>>{};
 
-  List<InventoryPotion> getInventoryPotions({required int profileId}) {
-    final Map<String, int> inventory = _inventoryFor(profileId);
+  static const Map<String, int> _starterPotions = <String, int>{
+    'bestkeeper_tonic': 1,
+    'focus_philter': 1,
+    'chronomancers_extract': 1,
+    'phoenix_brew': 1,
+  };
+
+  Future<List<InventoryPotion>> getInventoryPotions({
+    required int profileId,
+  }) async {
+    final Map<String, int> inventory = await _inventoryFor(profileId);
     return inventory.entries
         .where((MapEntry<String, int> entry) => entry.value > 0)
         .map(
@@ -20,25 +40,15 @@ class InventoryService {
               InventoryPotion(potionId: entry.key, quantity: entry.value),
         )
         .toList()
-      ..sort((InventoryPotion a, InventoryPotion b) {
-        final PotionDefinition left = PotionCatalog.byId(a.potionId);
-        final PotionDefinition right = PotionCatalog.byId(b.potionId);
-        final int rarityCompare = left.rarity.index.compareTo(
-          right.rarity.index,
-        );
-        if (rarityCompare != 0) {
-          return rarityCompare;
-        }
-        return left.name.compareTo(right.name);
-      });
+      ..sort(_compareInventoryPotions);
   }
 
-  InventoryMutationResult addPotion({
+  Future<InventoryMutationResult> addPotion({
     required int profileId,
     required String potionId,
     int amount = 1,
-  }) {
-    final InventoryMutationResult capacityResult = canAddPotion(
+  }) async {
+    final InventoryMutationResult capacityResult = await canAddPotion(
       profileId: profileId,
       potionId: potionId,
       amount: amount,
@@ -47,23 +57,27 @@ class InventoryService {
       return capacityResult;
     }
 
-    final Map<String, int> inventory = _inventoryFor(profileId);
-    inventory[potionId] = (inventory[potionId] ?? 0) + amount;
+    final Map<String, int> inventory = await _inventoryFor(profileId);
+    await _setQuantity(
+      profileId,
+      potionId,
+      (inventory[potionId] ?? 0) + amount,
+    );
     return const InventoryMutationResult.success();
   }
 
-  InventoryMutationResult removePotion({
+  Future<InventoryMutationResult> removePotion({
     required int profileId,
     required String potionId,
     int amount = 1,
-  }) {
+  }) async {
     if (amount <= 0) {
       return const InventoryMutationResult.failure(
         'Potion amount must be greater than zero.',
       );
     }
 
-    final Map<String, int> inventory = _inventoryFor(profileId);
+    final Map<String, int> inventory = await _inventoryFor(profileId);
     final int currentQuantity = inventory[potionId] ?? 0;
     if (currentQuantity < amount) {
       return const InventoryMutationResult.failure(
@@ -71,20 +85,15 @@ class InventoryService {
       );
     }
 
-    final int nextQuantity = currentQuantity - amount;
-    if (nextQuantity == 0) {
-      inventory.remove(potionId);
-    } else {
-      inventory[potionId] = nextQuantity;
-    }
+    await _setQuantity(profileId, potionId, currentQuantity - amount);
     return const InventoryMutationResult.success();
   }
 
-  InventoryMutationResult canAddPotion({
+  Future<InventoryMutationResult> canAddPotion({
     required int profileId,
     required String potionId,
     int amount = 1,
-  }) {
+  }) async {
     if (amount <= 0) {
       return const InventoryMutationResult.failure(
         'Potion amount must be greater than zero.',
@@ -97,7 +106,7 @@ class InventoryService {
       return const InventoryMutationResult.success();
     }
 
-    final int currentQuantity = _inventoryFor(profileId)[potionId] ?? 0;
+    final int currentQuantity = (await _inventoryFor(profileId))[potionId] ?? 0;
     if (currentQuantity + amount > capacity) {
       return InventoryMutationResult.failure(
         'Inventory capacity reached for ${definition.rarity.label} potions.',
@@ -164,10 +173,10 @@ class InventoryService {
     return const PotionLoadoutValidationResult.valid();
   }
 
-  InventoryMutationResult consumeSelectedPotionsForSession({
+  Future<InventoryMutationResult> consumeSelectedPotionsForSession({
     required int profileId,
     required List<String> selectedPotionIds,
-  }) {
+  }) async {
     final PotionLoadoutValidationResult validation =
         validateSessionPotionLoadout(selectedPotionIds);
     if (!validation.isValid) {
@@ -179,7 +188,7 @@ class InventoryService {
       requiredCounts[potionId] = (requiredCounts[potionId] ?? 0) + 1;
     }
 
-    final Map<String, int> inventory = _inventoryFor(profileId);
+    final Map<String, int> inventory = await _inventoryFor(profileId);
     for (final MapEntry<String, int> entry in requiredCounts.entries) {
       final int available = inventory[entry.key] ?? 0;
       if (available < entry.value) {
@@ -191,21 +200,20 @@ class InventoryService {
     }
 
     for (final MapEntry<String, int> entry in requiredCounts.entries) {
-      final int nextQuantity = (inventory[entry.key] ?? 0) - entry.value;
-      if (nextQuantity == 0) {
-        inventory.remove(entry.key);
-      } else {
-        inventory[entry.key] = nextQuantity;
-      }
+      await _setQuantity(
+        profileId,
+        entry.key,
+        (inventory[entry.key] ?? 0) - entry.value,
+      );
     }
 
     return const InventoryMutationResult.success();
   }
 
-  InventoryMutationResult purchasePotion({
+  Future<InventoryMutationResult> purchasePotion({
     required int profileId,
     required String potionId,
-  }) {
+  }) async {
     final PotionDefinition definition = PotionCatalog.byId(potionId);
     if (!definition.isPurchasable) {
       return const InventoryMutationResult.failure(
@@ -216,16 +224,80 @@ class InventoryService {
     return addPotion(profileId: profileId, potionId: potionId);
   }
 
-  Map<String, int> _inventoryFor(int profileId) {
-    return _inventoryByProfile.putIfAbsent(
-      profileId,
-      () => <String, int>{
-        'bestkeeper_tonic': 1,
-        'focus_philter': 1,
-        'chronomancers_extract': 1,
-        'phoenix_brew': 1,
-      },
+  Future<Map<String, int>> _inventoryFor(int profileId) async {
+    if (_useMemoryStore) {
+      return _memoryInventoryByProfile.putIfAbsent(
+        profileId,
+        () => Map<String, int>.from(_starterPotions),
+      );
+    }
+
+    final Database db = await AppDatabase.instance.database;
+    final List<Map<String, Object?>> rows = await db.query(
+      DatabaseSchema.profilePotionTable,
+      columns: <String>['potion_id', 'quantity'],
+      where: 'profile_id = ?',
+      whereArgs: <Object?>[profileId],
     );
+
+    if (rows.isEmpty) {
+      await _insertStarterPotions(db, profileId);
+      return Map<String, int>.from(_starterPotions);
+    }
+
+    return <String, int>{
+      for (final Map<String, Object?> row in rows)
+        row['potion_id'] as String: row['quantity'] as int,
+    };
+  }
+
+  Future<void> _setQuantity(
+    int profileId,
+    String potionId,
+    int quantity,
+  ) async {
+    if (_useMemoryStore) {
+      final Map<String, int> inventory = await _inventoryFor(profileId);
+      inventory[potionId] = quantity.clamp(0, 999999).toInt();
+      return;
+    }
+
+    final Database db = await AppDatabase.instance.database;
+    await db.insert(
+      DatabaseSchema.profilePotionTable,
+      <String, Object?>{
+        'profile_id': profileId,
+        'potion_id': potionId,
+        'quantity': quantity.clamp(0, 999999).toInt(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> _insertStarterPotions(Database db, int profileId) async {
+    final Batch batch = db.batch();
+    for (final MapEntry<String, int> entry in _starterPotions.entries) {
+      batch.insert(
+        DatabaseSchema.profilePotionTable,
+        <String, Object?>{
+          'profile_id': profileId,
+          'potion_id': entry.key,
+          'quantity': entry.value,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  static int _compareInventoryPotions(InventoryPotion a, InventoryPotion b) {
+    final PotionDefinition left = PotionCatalog.byId(a.potionId);
+    final PotionDefinition right = PotionCatalog.byId(b.potionId);
+    final int rarityCompare = left.rarity.index.compareTo(right.rarity.index);
+    if (rarityCompare != 0) {
+      return rarityCompare;
+    }
+    return left.name.compareTo(right.name);
   }
 }
 

@@ -100,6 +100,8 @@ class SaveService {
     double xpMultiplier = 1.0,
     double goldMultiplier = 1.0,
     int rewardBonusMinutes = 0,
+    double firstSessionXpBonusMultiplier = 1.0,
+    bool allowStreakProgress = true,
   }) async {
     if (_useMemoryStore) {
       _loadWebSavesIfNeeded();
@@ -108,9 +110,15 @@ class SaveService {
         throw StateError('Profile does not exist.');
       }
 
+      final bool isFirstSessionToday =
+          currentSave.lastStreakDate !=
+          _formatDateOnly(DateTime.parse(endedAt));
+      final double effectiveXpMultiplier =
+          xpMultiplier *
+          (isFirstSessionToday ? firstSessionXpBonusMultiplier : 1.0);
       final SessionRewards rewards = progressionSystem.calculateSessionRewards(
         durationMinutes + rewardBonusMinutes,
-        xpMultiplier: xpMultiplier,
+        xpMultiplier: effectiveXpMultiplier,
         goldMultiplier: goldMultiplier,
       );
       final int nextXp = currentSave.xp + rewards.earnedXp;
@@ -118,7 +126,7 @@ class SaveService {
         currentCount: currentSave.streakDays,
         lastCompletedOn: currentSave.lastStreakDate,
         completedAt: DateTime.parse(endedAt),
-        durationMinutes: durationMinutes,
+        durationMinutes: allowStreakProgress ? durationMinutes : 0,
       );
       final PlayerSave updatedSave = currentSave.copyWith(
         xp: nextXp,
@@ -143,6 +151,8 @@ class SaveService {
       xpMultiplier: xpMultiplier,
       goldMultiplier: goldMultiplier,
       rewardBonusMinutes: rewardBonusMinutes,
+      firstSessionXpBonusMultiplier: firstSessionXpBonusMultiplier,
+      allowStreakProgress: allowStreakProgress,
     );
     return PlayerSave.fromProfile(profile);
   }
@@ -207,5 +217,12 @@ class SaveService {
 
   void _persistWebSaves() {
     _webStorage.save(_webSaves.values.toList());
+  }
+
+  String _formatDateOnly(DateTime value) {
+    final String year = value.year.toString().padLeft(4, '0');
+    final String month = value.month.toString().padLeft(2, '0');
+    final String day = value.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 }

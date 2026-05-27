@@ -79,7 +79,8 @@ class PotionCatalog {
     PotionDefinition(
       id: 'lucid_draught',
       name: 'Lucid Draught',
-      description: 'Helps maintain mental clarity during unstable focus periods.',
+      description:
+          'Helps maintain mental clarity during unstable focus periods.',
       effectSummary: 'Reduces idle punishment sensitivity for one session.',
       rarity: PotionRarity.common,
       effectType: PotionEffectType.idlePenaltyReduction,
@@ -150,8 +151,9 @@ class PotionCatalog {
     PotionDefinition(
       id: 'merchants_tonic',
       name: "Merchant's Tonic",
-      description: 'A favorite among traveling traders and bargain hunters.',
-      effectSummary: 'Discounts all shop items by 20% for one day.',
+      description:
+          'A favorite among traveling traders who turn focus into profit.',
+      effectSummary: 'Increases gold earned from the active session by 20%.',
       rarity: PotionRarity.rare,
       effectType: PotionEffectType.shopDiscount,
       effectValue: 0.20,

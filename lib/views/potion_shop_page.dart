@@ -22,6 +22,7 @@ class _PotionShopPageState extends State<PotionShopPage> {
 
   int? _profileId;
   late Future<PlayerSave?> _saveFuture;
+  late Future<List<InventoryPotion>> _inventoryFuture;
   final Map<String, int> _cart = <String, int>{};
 
   @override
@@ -32,7 +33,13 @@ class _PotionShopPageState extends State<PotionShopPage> {
     }
 
     _profileId = ModalRoute.of(context)?.settings.arguments as int?;
-    _saveFuture = _saveService.getSaveById(_profileId ?? -1);
+    final int? profileId = _profileId;
+    _saveFuture = profileId == null
+        ? Future<PlayerSave?>.value()
+        : _saveService.getSaveById(profileId);
+    _inventoryFuture = profileId == null
+        ? Future<List<InventoryPotion>>.value(const <InventoryPotion>[])
+        : _inventoryService.getInventoryPotions(profileId: profileId);
   }
 
   Future<void> _buyCart() async {
@@ -49,7 +56,7 @@ class _PotionShopPageState extends State<PotionShopPage> {
     }
 
     for (final MapEntry<String, int> entry in _cart.entries) {
-      final InventoryMutationResult capacityResult = _inventoryService
+      final InventoryMutationResult capacityResult = await _inventoryService
           .canAddPotion(
             profileId: profileId,
             potionId: entry.key,
@@ -64,11 +71,12 @@ class _PotionShopPageState extends State<PotionShopPage> {
     try {
       await _saveService.spendGold(profileId: profileId, amount: totalGold);
       for (final MapEntry<String, int> entry in _cart.entries) {
-        final InventoryMutationResult result = _inventoryService.addPotion(
-          profileId: profileId,
-          potionId: entry.key,
-          amount: entry.value,
-        );
+        final InventoryMutationResult result = await _inventoryService
+            .addPotion(
+              profileId: profileId,
+              potionId: entry.key,
+              amount: entry.value,
+            );
         if (!result.success) {
           _showFeedback(result.message ?? 'Could not buy potion.');
           return;
@@ -79,16 +87,19 @@ class _PotionShopPageState extends State<PotionShopPage> {
       setState(() {
         _cart.clear();
         _saveFuture = _saveService.getSaveById(profileId);
+        _inventoryFuture = _inventoryService.getInventoryPotions(
+          profileId: profileId,
+        );
       });
     } catch (error) {
       _showFeedback(error.toString());
     }
   }
 
-  void _addToCart({
+  Future<void> _addToCart({
     required PotionDefinition definition,
     required PlayerSave? save,
-  }) {
+  }) async {
     final int? profileId = _profileId;
     final int? priceGold = definition.priceGold;
     if (profileId == null || priceGold == null) {
@@ -96,7 +107,7 @@ class _PotionShopPageState extends State<PotionShopPage> {
     }
 
     final int nextCartAmount = (_cart[definition.id] ?? 0) + 1;
-    final InventoryMutationResult capacityResult = _inventoryService
+    final InventoryMutationResult capacityResult = await _inventoryService
         .canAddPotion(
           profileId: profileId,
           potionId: definition.id,
@@ -134,10 +145,9 @@ class _PotionShopPageState extends State<PotionShopPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Map<String, int> _inventoryCounts(int profileId) {
+  Map<String, int> _inventoryCounts(List<InventoryPotion> potions) {
     return <String, int>{
-      for (final InventoryPotion potion
-          in _inventoryService.getInventoryPotions(profileId: profileId))
+      for (final InventoryPotion potion in potions)
         potion.potionId: potion.quantity,
     };
   }
@@ -169,12 +179,18 @@ class _PotionShopPageState extends State<PotionShopPage> {
           SafeArea(
             child: profileId == null
                 ? const Center(child: Text('Profile not found.'))
-                : FutureBuilder<PlayerSave?>(
-                    future: _saveFuture,
+                : FutureBuilder<List<Object?>>(
+                    future: Future.wait<Object?>(<Future<Object?>>[
+                      _saveFuture,
+                      _inventoryFuture,
+                    ]),
                     builder: (context, snapshot) {
-                      final PlayerSave? save = snapshot.data;
+                      final PlayerSave? save = snapshot.data?[0] as PlayerSave?;
+                      final List<InventoryPotion> inventory =
+                          snapshot.data?[1] as List<InventoryPotion>? ??
+                          const <InventoryPotion>[];
                       final Map<String, int> quantities = _inventoryCounts(
-                        profileId,
+                        inventory,
                       );
                       final List<PotionDefinition> purchasablePotions =
                           PotionCatalog.potions

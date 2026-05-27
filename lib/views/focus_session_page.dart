@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../data/potion_catalog.dart';
+import '../models/inventory_potion.dart';
 import '../models/potion_definition.dart';
 import '../models/potion_effect_type.dart';
 import '../services/inventory_service.dart';
@@ -46,6 +48,12 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
   bool _hasUsedBreak = false;
   bool _isSaving = false;
   bool _isStarting = false;
+  bool _isUsingPotion = false;
+  bool _streakBlockedByEvent = false;
+  int _failureProtectionCharges = 0;
+  int _streakProtectionCharges = 0;
+  int _eventRewardBonusMinutes = 0;
+  String? _eventLog;
 
   bool get _isRunning => _startedAt != null;
   bool get _isBreakActive => _breakStartedAt != null;
@@ -69,7 +77,7 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
     } else if (arguments is int) {
       _profileId = arguments;
     }
-    _sessionEffects = PotionSessionEffects.fromPotionIds(_selectedPotionIds);
+    _recalculatePotionEffects();
   }
 
   @override
@@ -108,7 +116,7 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       _isStarting = true;
     });
 
-    final InventoryMutationResult consumeResult = _inventoryService
+    final InventoryMutationResult consumeResult = await _inventoryService
         .consumeSelectedPotionsForSession(
           profileId: profileId,
           selectedPotionIds: _selectedPotionIds,
@@ -136,6 +144,11 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       _breakStartedAt = null;
       _breakRemainingSeconds = _sessionEffects.breakDurationSeconds;
       _hasUsedBreak = false;
+      _failureProtectionCharges = _sessionEffects.failureProtectionCharges;
+      _streakProtectionCharges = _sessionEffects.streakProtectionCharges;
+      _eventRewardBonusMinutes = 0;
+      _streakBlockedByEvent = false;
+      _eventLog = null;
       _isStarting = false;
     });
 
@@ -234,6 +247,201 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
     });
   }
 
+  void _recalculatePotionEffects() {
+    _sessionEffects = PotionSessionEffects.fromPotionIds(_selectedPotionIds);
+  }
+
+  Future<void> _openPotionBag() async {
+    final int? profileId = _profileId;
+    if (profileId == null || !_isRunning || _isUsingPotion) {
+      return;
+    }
+
+    final List<InventoryPotion> potions = await _inventoryService
+        .getInventoryPotions(profileId: profileId);
+    if (!mounted) {
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        final List<PotionDefinition> definitions = PotionCatalog.potions
+            .where(
+              (PotionDefinition potion) => potions.any(
+                (InventoryPotion owned) =>
+                    owned.potionId == potion.id && owned.quantity > 0,
+              ),
+            )
+            .toList();
+
+        if (definitions.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: Text('No potions available.')),
+          );
+        }
+
+        final Map<String, int> quantities = <String, int>{
+          for (final InventoryPotion potion in potions)
+            potion.potionId: potion.quantity,
+        };
+
+        return SafeArea(
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            itemCount: definitions.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final PotionDefinition definition = definitions[index];
+              return ListTile(
+                leading: const Icon(Icons.local_drink),
+                title: Text(definition.name),
+                subtitle: Text(definition.effectSummary),
+                trailing: FilledButton(
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    await _usePotion(definition.id);
+                  },
+                  child: Text('Use (${quantities[definition.id] ?? 0})'),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _usePotion(String potionId) async {
+    final int? profileId = _profileId;
+    if (profileId == null || !_isRunning || _isUsingPotion) {
+      return;
+    }
+
+    final List<String> nextSelection = <String>[
+      ..._selectedPotionIds,
+      potionId,
+    ];
+    final PotionLoadoutValidationResult validation = _inventoryService
+        .validateSessionPotionLoadout(nextSelection);
+    if (!validation.isValid) {
+      _showSnack(validation.message ?? 'Invalid potion loadout.');
+      return;
+    }
+
+    setState(() {
+      _isUsingPotion = true;
+    });
+
+    final InventoryMutationResult result = await _inventoryService.removePotion(
+      profileId: profileId,
+      potionId: potionId,
+    );
+    if (!mounted) {
+      return;
+    }
+
+    if (!result.success) {
+      _showSnack(result.message ?? 'Could not use potion.');
+      setState(() {
+        _isUsingPotion = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _selectedPotionIds.add(potionId);
+      _recalculatePotionEffects();
+      _failureProtectionCharges = _sessionEffects.failureProtectionCharges;
+      _streakProtectionCharges = _sessionEffects.streakProtectionCharges;
+      _breakRemainingSeconds = _sessionEffects.breakDurationSeconds;
+      _isUsingPotion = false;
+    });
+    _showSnack('${PotionCatalog.byId(potionId).name} used.');
+  }
+
+  void _triggerFocusEvent() {
+    if (!_isRunning || _isBreakActive) {
+      return;
+    }
+
+    final math.Random random = math.Random();
+    final double rareChance = (0.12 + _sessionEffects.rareEventChanceBonus)
+        .clamp(0.0, 0.75)
+        .toDouble();
+    final bool rareSuccess = random.nextDouble() < rareChance;
+    final bool success = rareSuccess || random.nextBool();
+
+    setState(() {
+      if (success) {
+        final int bonus =
+            ((rareSuccess ? 5 : 2) * _sessionEffects.eventRewardMultiplier)
+                .round()
+                .clamp(1, 20)
+                .toInt();
+        _eventRewardBonusMinutes += bonus;
+        _eventLog = rareSuccess
+            ? 'Rare focus event succeeded: +$bonus reward minutes.'
+            : 'Focus event succeeded: +$bonus reward minutes.';
+        return;
+      }
+
+      if (_failureProtectionCharges > 0) {
+        _removeActivePotionByEffect(PotionEffectType.failureProtection);
+        _failureProtectionCharges = _sessionEffects.failureProtectionCharges;
+        _eventLog = 'Failed focus event was fully negated.';
+        return;
+      }
+
+      if (_streakProtectionCharges > 0) {
+        _removeActivePotionByEffect(PotionEffectType.streakProtection);
+        _streakProtectionCharges = _sessionEffects.streakProtectionCharges;
+      } else {
+        _streakBlockedByEvent = true;
+      }
+
+      final int penaltySeconds =
+          (60 *
+                  _sessionEffects.eventPenaltyMultiplier *
+                  _sessionEffects.idlePenaltyMultiplier *
+                  _sessionEffects.failurePenaltyMultiplier)
+              .round()
+              .clamp(0, 300)
+              .toInt();
+      _focusAccumulatedMilliseconds = math.max(
+        0,
+        _focusAccumulatedMilliseconds - (penaltySeconds * 1000),
+      );
+      _elapsedMilliseconds = math.max(
+        0,
+        _elapsedMilliseconds - (penaltySeconds * 1000),
+      );
+      _eventLog = penaltySeconds == 0
+          ? 'Failed focus event penalty was reduced to zero.'
+          : 'Focus event failed: -${penaltySeconds}s focus time.';
+    });
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _removeActivePotionByEffect(PotionEffectType effectType) {
+    final int index = _selectedPotionIds.indexWhere(
+      (String potionId) =>
+          PotionCatalog.byId(potionId).effectType == effectType,
+    );
+    if (index == -1) {
+      return;
+    }
+    _selectedPotionIds.removeAt(index);
+    _recalculatePotionEffects();
+  }
+
   Future<bool?> _showConfirmDialog({
     required String title,
     required String content,
@@ -284,7 +492,11 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
         endedAt: endedAt.toIso8601String(),
         xpMultiplier: _sessionEffects.xpMultiplier,
         goldMultiplier: _sessionEffects.goldMultiplier,
-        rewardBonusMinutes: _sessionEffects.rewardBonusMinutes,
+        rewardBonusMinutes:
+            _sessionEffects.rewardBonusMinutes + _eventRewardBonusMinutes,
+        firstSessionXpBonusMultiplier:
+            _sessionEffects.firstSessionXpBonusMultiplier,
+        allowStreakProgress: !_streakBlockedByEvent,
       );
 
       if (!mounted) {
@@ -368,9 +580,43 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                     ),
                   ],
                   const Spacer(),
+                  if (_eventLog != null) ...[
+                    Text(
+                      _eventLog!,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   SizedBox(
                     height: 54,
                     child: _primarySessionButton(breakProgress),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 50,
+                    child: OutlinedButton.icon(
+                      onPressed: _isRunning && !_isSaving && !_isStarting
+                          ? _openPotionBag
+                          : null,
+                      icon: const Icon(Icons.inventory_2),
+                      label: Text(_isUsingPotion ? 'Using...' : 'Use Potion'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 50,
+                    child: OutlinedButton.icon(
+                      onPressed:
+                          _isRunning &&
+                              !_isSaving &&
+                              !_isStarting &&
+                              !_isBreakActive
+                          ? _triggerFocusEvent
+                          : null,
+                      icon: const Icon(Icons.bolt),
+                      label: const Text('Focus Event'),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
@@ -459,17 +705,33 @@ class PotionSessionEffects {
   const PotionSessionEffects({
     this.xpMultiplier = 1.0,
     this.goldMultiplier = 1.0,
+    this.eventRewardMultiplier = 1.0,
+    this.eventPenaltyMultiplier = 1.0,
+    this.idlePenaltyMultiplier = 1.0,
+    this.failurePenaltyMultiplier = 1.0,
+    this.firstSessionXpBonusMultiplier = 1.0,
+    this.rareEventChanceBonus = 0.0,
     this.rewardBonusMinutes = 0,
     this.breakBonusSeconds = 0,
     this.breaksDisabled = false,
+    this.failureProtectionCharges = 0,
+    this.streakProtectionCharges = 0,
     this.labels = const <String>[],
   });
 
   final double xpMultiplier;
   final double goldMultiplier;
+  final double eventRewardMultiplier;
+  final double eventPenaltyMultiplier;
+  final double idlePenaltyMultiplier;
+  final double failurePenaltyMultiplier;
+  final double firstSessionXpBonusMultiplier;
+  final double rareEventChanceBonus;
   final int rewardBonusMinutes;
   final int breakBonusSeconds;
   final bool breaksDisabled;
+  final int failureProtectionCharges;
+  final int streakProtectionCharges;
   final List<String> labels;
 
   int get breakDurationSeconds => breaksDisabled
@@ -479,8 +741,16 @@ class PotionSessionEffects {
   static PotionSessionEffects fromPotionIds(List<String> potionIds) {
     double xpMultiplier = 1.0;
     double goldMultiplier = 1.0;
+    double eventRewardMultiplier = 1.0;
+    double eventPenaltyMultiplier = 1.0;
+    double idlePenaltyMultiplier = 1.0;
+    double failurePenaltyMultiplier = 1.0;
+    double firstSessionXpBonusMultiplier = 1.0;
+    double rareEventChanceBonus = 0.0;
     int rewardBonusMinutes = 0;
     int breakBonusSeconds = 0;
+    int failureProtectionCharges = 0;
+    int streakProtectionCharges = 0;
     bool breaksDisabled = false;
     final List<String> labels = <String>[];
 
@@ -504,6 +774,7 @@ class PotionSessionEffects {
         case PotionEffectType.rewardRisk:
           xpMultiplier *= potion.effectValue;
           goldMultiplier *= potion.effectValue;
+          failurePenaltyMultiplier *= potion.effectValue;
           break;
         case PotionEffectType.overmind:
           xpMultiplier *= 1.5;
@@ -511,13 +782,28 @@ class PotionSessionEffects {
           breaksDisabled = true;
           break;
         case PotionEffectType.eventPenaltyReduction:
+          eventPenaltyMultiplier *= 0.5;
+          break;
         case PotionEffectType.eventRewardBoost:
+          eventRewardMultiplier *= 1.5;
+          break;
         case PotionEffectType.streakProtection:
+          streakProtectionCharges += potion.effectValue.round();
+          break;
         case PotionEffectType.failureProtection:
+          failureProtectionCharges += potion.effectValue.round();
+          break;
         case PotionEffectType.idlePenaltyReduction:
+          idlePenaltyMultiplier *= 0.5;
+          break;
         case PotionEffectType.dailyFirstSessionBonus:
+          firstSessionXpBonusMultiplier *= 1.25;
+          break;
         case PotionEffectType.shopDiscount:
+          goldMultiplier += potion.effectValue;
+          break;
         case PotionEffectType.rareEventChance:
+          rareEventChanceBonus += 0.35;
           break;
       }
     }
@@ -525,9 +811,17 @@ class PotionSessionEffects {
     return PotionSessionEffects(
       xpMultiplier: xpMultiplier,
       goldMultiplier: goldMultiplier,
+      eventRewardMultiplier: eventRewardMultiplier,
+      eventPenaltyMultiplier: eventPenaltyMultiplier,
+      idlePenaltyMultiplier: idlePenaltyMultiplier,
+      failurePenaltyMultiplier: failurePenaltyMultiplier,
+      firstSessionXpBonusMultiplier: firstSessionXpBonusMultiplier,
+      rareEventChanceBonus: rareEventChanceBonus,
       rewardBonusMinutes: rewardBonusMinutes,
       breakBonusSeconds: breakBonusSeconds,
       breaksDisabled: breaksDisabled,
+      failureProtectionCharges: failureProtectionCharges,
+      streakProtectionCharges: streakProtectionCharges,
       labels: List<String>.unmodifiable(labels),
     );
   }

@@ -55,6 +55,9 @@ class AppDatabase {
             await db.execute(statement);
           }
         }
+        if (oldVersion < 4) {
+          await db.execute(DatabaseSchema.createProfilePotionTableStatement());
+        }
       },
     );
   }

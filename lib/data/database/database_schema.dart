@@ -2,12 +2,13 @@ class DatabaseSchema {
   DatabaseSchema._();
 
   static const String databaseName = 'focus_rpg.db';
-  static const int databaseVersion = 3;
+  static const int databaseVersion = 4;
 
   static const String profileTable = 'Profile';
   static const String sessionTable = 'Session';
   static const String itemTable = 'Item';
   static const String profileItemTable = 'ProfileItem';
+  static const String profilePotionTable = 'ProfilePotion';
   static const String cosmeticsTable = 'Cosmetics';
   static const String ownedCosmeticsTable = 'OwnedCosmetics';
   static const String equippedCosmeticsTable = 'EquippedCosmetics';
@@ -59,6 +60,15 @@ class DatabaseSchema {
         PRIMARY KEY (profile_id, item_id),
         FOREIGN KEY (profile_id) REFERENCES $profileTable(profile_id) ON DELETE CASCADE,
         FOREIGN KEY (item_id) REFERENCES $itemTable(item_id) ON DELETE CASCADE
+      )
+      ''',
+      '''
+      CREATE TABLE $profilePotionTable (
+        profile_id INTEGER NOT NULL,
+        potion_id TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+        PRIMARY KEY (profile_id, potion_id),
+        FOREIGN KEY (profile_id) REFERENCES $profileTable(profile_id) ON DELETE CASCADE
       )
       ''',
       '''
@@ -126,6 +136,18 @@ class DatabaseSchema {
       ''',
       seedAppSettingsStatement(),
     ];
+  }
+
+  static String createProfilePotionTableStatement() {
+    return '''
+      CREATE TABLE IF NOT EXISTS $profilePotionTable (
+        profile_id INTEGER NOT NULL,
+        potion_id TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+        PRIMARY KEY (profile_id, potion_id),
+        FOREIGN KEY (profile_id) REFERENCES $profileTable(profile_id) ON DELETE CASCADE
+      )
+      ''';
   }
 
   static String createAppSettingsTableStatement() {

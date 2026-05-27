@@ -105,45 +105,73 @@ class _PotionList extends StatefulWidget {
 
 class _PotionListState extends State<_PotionList> {
   String? _expandedPotionId;
+  late Future<List<InventoryPotion>> _potionsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _potionsFuture = InventoryService.instance.getInventoryPotions(
+      profileId: widget.profileId,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _PotionList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.profileId != widget.profileId) {
+      _potionsFuture = InventoryService.instance.getInventoryPotions(
+        profileId: widget.profileId,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final InventoryService service = InventoryService.instance;
-    final Map<String, int> quantities = <String, int>{
-      for (final InventoryPotion potion in service.getInventoryPotions(
-        profileId: widget.profileId,
-      ))
-        potion.potionId: potion.quantity,
-    };
-    final List<PotionDefinition> definitions = PotionCatalog.potions
-        .where(
-          (PotionDefinition potion) =>
-              widget.rarityFilter == null ||
-              potion.rarity == widget.rarityFilter,
-        )
-        .where((PotionDefinition potion) => (quantities[potion.id] ?? 0) > 0)
-        .toList();
+    return FutureBuilder<List<InventoryPotion>>(
+      future: _potionsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    if (definitions.isEmpty) {
-      return const Center(child: Text('No potions in this tab.'));
-    }
+        final Map<String, int> quantities = <String, int>{
+          for (final InventoryPotion potion
+              in snapshot.data ?? const <InventoryPotion>[])
+            potion.potionId: potion.quantity,
+        };
+        final List<PotionDefinition> definitions = PotionCatalog.potions
+            .where(
+              (PotionDefinition potion) =>
+                  widget.rarityFilter == null ||
+                  potion.rarity == widget.rarityFilter,
+            )
+            .where(
+              (PotionDefinition potion) => (quantities[potion.id] ?? 0) > 0,
+            )
+            .toList();
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: definitions.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final PotionDefinition definition = definitions[index];
-        return PotionCard(
-          definition: definition,
-          quantity: quantities[definition.id] ?? 0,
-          expanded: _expandedPotionId == definition.id,
-          onTap: () {
-            setState(() {
-              _expandedPotionId = _expandedPotionId == definition.id
-                  ? null
-                  : definition.id;
-            });
+        if (definitions.isEmpty) {
+          return const Center(child: Text('No potions in this tab.'));
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: definitions.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          itemBuilder: (context, index) {
+            final PotionDefinition definition = definitions[index];
+            return PotionCard(
+              definition: definition,
+              quantity: quantities[definition.id] ?? 0,
+              expanded: _expandedPotionId == definition.id,
+              onTap: () {
+                setState(() {
+                  _expandedPotionId = _expandedPotionId == definition.id
+                      ? null
+                      : definition.id;
+                });
+              },
+            );
           },
         );
       },
