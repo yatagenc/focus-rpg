@@ -9,6 +9,8 @@ class Profile {
     required this.profileLastPlayedAt,
     required this.profileTotalStudyMinutes,
     required this.profileTotalCompletedSessions,
+    required this.profileStreakDays,
+    required this.profileLastStreakDate,
   });
 
   final int profileId;
@@ -20,6 +22,8 @@ class Profile {
   final String? profileLastPlayedAt;
   final int profileTotalStudyMinutes;
   final int profileTotalCompletedSessions;
+  final int profileStreakDays;
+  final String? profileLastStreakDate;
 
   factory Profile.fromMap(Map<String, Object?> map) {
     return Profile(
@@ -33,6 +37,8 @@ class Profile {
       profileTotalStudyMinutes: map['profile_total_study_minutes'] as int,
       profileTotalCompletedSessions:
           map['profile_total_completed_sessions'] as int,
+      profileStreakDays: map['profile_streak_days'] as int,
+      profileLastStreakDate: map['profile_last_streak_date'] as String?,
     );
   }
 
@@ -47,6 +53,8 @@ class Profile {
       'profile_last_played_at': profileLastPlayedAt,
       'profile_total_study_minutes': profileTotalStudyMinutes,
       'profile_total_completed_sessions': profileTotalCompletedSessions,
+      'profile_streak_days': profileStreakDays,
+      'profile_last_streak_date': profileLastStreakDate,
     };
   }
 }

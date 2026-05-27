@@ -49,6 +49,15 @@ class AppDatabase {
           await db.execute(DatabaseSchema.createAppSettingsTableStatement());
           await db.execute(DatabaseSchema.seedAppSettingsStatement());
         }
+        if (oldVersion < 3) {
+          for (final String statement
+              in DatabaseSchema.addProfileStreakColumnsStatements()) {
+            await db.execute(statement);
+          }
+        }
+        if (oldVersion < 4) {
+          await db.execute(DatabaseSchema.createProfilePotionTableStatement());
+        }
       },
     );
   }

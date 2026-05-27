@@ -4,14 +4,18 @@ import 'package:flutter/services.dart';
 
 import 'core/routes.dart';
 import 'data/database/app_database.dart';
+import 'screens/inventory_screen.dart';
+import 'screens/potion_selection_screen.dart';
 import 'services/settings_service.dart';
 import 'views/character_selection_page.dart';
 import 'views/focus_session_page.dart';
 import 'views/main_hub_page.dart';
 import 'views/main_menu_page.dart';
+import 'views/potion_shop_page.dart';
 import 'views/profile_page.dart';
 import 'views/settings_page.dart';
 import 'views/slots_page.dart';
+import 'views/thread_shop_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,9 +62,14 @@ class FocusRPGApp extends StatelessWidget {
                 const CharacterSelectionPage(),
             AppRoutes.mainHub: (context) => const MainHubPage(),
             AppRoutes.focusSession: (context) => const FocusSessionPage(),
+            AppRoutes.inventory: (context) => const InventoryScreen(),
+            AppRoutes.potionShop: (context) => const PotionShopPage(),
+            AppRoutes.potionSelection: (context) =>
+                const PotionSelectionScreen(),
             AppRoutes.profile: (context) => const ProfilePage(),
             AppRoutes.slots: (context) => const SlotsPage(),
             AppRoutes.settings: (context) => const SettingsPage(),
+            AppRoutes.threadShop: (context) => const ThreadShopPage(),
           },
         );
       },

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../core/progression.dart';
+import '../core/streak.dart';
 import '../data/models/game_session.dart';
 import '../data/repositories/game_repository.dart';
 import '../models/player_save.dart';
@@ -63,6 +64,8 @@ class SaveService {
         createdAt: DateTime.now().toIso8601String(),
         totalStudyMinutes: 0,
         totalCompletedSessions: 0,
+        streakDays: 0,
+        lastStreakDate: null,
       );
       _webSaves[profileId] = save;
       _persistWebSaves();
@@ -94,6 +97,11 @@ class SaveService {
     required int durationMinutes,
     required String startedAt,
     required String endedAt,
+    double xpMultiplier = 1.0,
+    double goldMultiplier = 1.0,
+    int rewardBonusMinutes = 0,
+    double firstSessionXpBonusMultiplier = 1.0,
+    bool allowStreakProgress = true,
   }) async {
     if (_useMemoryStore) {
       _loadWebSavesIfNeeded();
@@ -102,10 +110,24 @@ class SaveService {
         throw StateError('Profile does not exist.');
       }
 
+      final bool isFirstSessionToday =
+          currentSave.lastStreakDate !=
+          _formatDateOnly(DateTime.parse(endedAt));
+      final double effectiveXpMultiplier =
+          xpMultiplier *
+          (isFirstSessionToday ? firstSessionXpBonusMultiplier : 1.0);
       final SessionRewards rewards = progressionSystem.calculateSessionRewards(
-        durationMinutes,
+        durationMinutes + rewardBonusMinutes,
+        xpMultiplier: effectiveXpMultiplier,
+        goldMultiplier: goldMultiplier,
       );
       final int nextXp = currentSave.xp + rewards.earnedXp;
+      final StreakState nextStreak = calculateNextStreak(
+        currentCount: currentSave.streakDays,
+        lastCompletedOn: currentSave.lastStreakDate,
+        completedAt: DateTime.parse(endedAt),
+        durationMinutes: allowStreakProgress ? durationMinutes : 0,
+      );
       final PlayerSave updatedSave = currentSave.copyWith(
         xp: nextXp,
         level: progressionSystem.getLevelFromTotalXp(nextXp).level,
@@ -113,6 +135,8 @@ class SaveService {
         lastPlayedAt: endedAt,
         totalStudyMinutes: currentSave.totalStudyMinutes + durationMinutes,
         totalCompletedSessions: currentSave.totalCompletedSessions + 1,
+        streakDays: nextStreak.count,
+        lastStreakDate: nextStreak.lastCompletedOn,
       );
       _webSaves[profileId] = updatedSave;
       _persistWebSaves();
@@ -124,6 +148,40 @@ class SaveService {
       durationMinutes: durationMinutes,
       startedAt: startedAt,
       endedAt: endedAt,
+      xpMultiplier: xpMultiplier,
+      goldMultiplier: goldMultiplier,
+      rewardBonusMinutes: rewardBonusMinutes,
+      firstSessionXpBonusMultiplier: firstSessionXpBonusMultiplier,
+      allowStreakProgress: allowStreakProgress,
+    );
+    return PlayerSave.fromProfile(profile);
+  }
+
+  Future<PlayerSave> spendGold({
+    required int profileId,
+    required int amount,
+  }) async {
+    if (_useMemoryStore) {
+      _loadWebSavesIfNeeded();
+      final PlayerSave? currentSave = _webSaves[profileId];
+      if (currentSave == null) {
+        throw StateError('Profile does not exist.');
+      }
+      if (currentSave.gold < amount) {
+        throw StateError('Not enough gold.');
+      }
+
+      final PlayerSave updatedSave = currentSave.copyWith(
+        gold: currentSave.gold - amount,
+      );
+      _webSaves[profileId] = updatedSave;
+      _persistWebSaves();
+      return updatedSave;
+    }
+
+    final profile = await _repository.spendGold(
+      profileId: profileId,
+      amount: amount,
     );
     return PlayerSave.fromProfile(profile);
   }
@@ -159,5 +217,12 @@ class SaveService {
 
   void _persistWebSaves() {
     _webStorage.save(_webSaves.values.toList());
+  }
+
+  String _formatDateOnly(DateTime value) {
+    final String year = value.year.toString().padLeft(4, '0');
+    final String month = value.month.toString().padLeft(2, '0');
+    final String day = value.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 }

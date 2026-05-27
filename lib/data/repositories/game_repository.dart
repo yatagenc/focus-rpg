@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../../core/progression.dart';
+import '../../core/streak.dart';
 import '../database/app_database.dart';
 import '../database/database_schema.dart';
 import '../models/equipped_cosmetic.dart';
@@ -91,17 +92,18 @@ class GameRepository {
     String sessionType = 'focus',
     String? startedAt,
     String? endedAt,
+    double xpMultiplier = 1.0,
+    double goldMultiplier = 1.0,
+    int rewardBonusMinutes = 0,
+    double firstSessionXpBonusMultiplier = 1.0,
+    bool allowStreakProgress = true,
   }) async {
     _validateNonNegative(durationMinutes, 'duration_minutes');
+    _validateNonNegative(rewardBonusMinutes, 'reward_bonus_minutes');
 
     final Database db = await _database.database;
     final String endTimestamp = endedAt ?? DateTime.now().toIso8601String();
     final String startTimestamp = startedAt ?? endTimestamp;
-    final SessionRewards rewards = progressionSystem.calculateSessionRewards(
-      durationMinutes,
-    );
-    final int xpEarned = rewards.earnedXp;
-    final int goldEarned = rewards.earnedGold;
 
     return db.transaction<Profile>((Transaction txn) async {
       final List<Map<String, Object?>> profileRows = await txn.query(
@@ -116,8 +118,27 @@ class GameRepository {
       }
 
       final Profile currentProfile = Profile.fromMap(profileRows.first);
+      final DateTime completedAt = DateTime.parse(endTimestamp);
+      final bool isFirstSessionToday =
+          currentProfile.profileLastStreakDate != _formatDateOnly(completedAt);
+      final double effectiveXpMultiplier =
+          xpMultiplier *
+          (isFirstSessionToday ? firstSessionXpBonusMultiplier : 1.0);
+      final SessionRewards rewards = progressionSystem.calculateSessionRewards(
+        durationMinutes + rewardBonusMinutes,
+        xpMultiplier: effectiveXpMultiplier,
+        goldMultiplier: goldMultiplier,
+      );
+      final int xpEarned = rewards.earnedXp;
+      final int goldEarned = rewards.earnedGold;
       final int nextXp = currentProfile.profileXp + xpEarned;
       final int nextLevel = progressionSystem.getLevelFromTotalXp(nextXp).level;
+      final StreakState nextStreak = calculateNextStreak(
+        currentCount: currentProfile.profileStreakDays,
+        lastCompletedOn: currentProfile.profileLastStreakDate,
+        completedAt: completedAt,
+        durationMinutes: allowStreakProgress ? durationMinutes : 0,
+      );
 
       await txn.insert(
         DatabaseSchema.sessionTable,
@@ -144,6 +165,8 @@ class GameRepository {
               currentProfile.profileTotalStudyMinutes + durationMinutes,
           'profile_total_completed_sessions':
               currentProfile.profileTotalCompletedSessions + 1,
+          'profile_streak_days': nextStreak.count,
+          'profile_last_streak_date': nextStreak.lastCompletedOn,
         },
         where: 'profile_id = ?',
         whereArgs: <Object?>[profileId],
@@ -174,6 +197,48 @@ class GameRepository {
     }
 
     return Profile.fromMap(rows.first);
+  }
+
+  Future<Profile> spendGold({
+    required int profileId,
+    required int amount,
+  }) async {
+    _validateNonNegative(amount, 'amount');
+
+    final Database db = await _database.database;
+    return db.transaction<Profile>((Transaction txn) async {
+      final List<Map<String, Object?>> profileRows = await txn.query(
+        DatabaseSchema.profileTable,
+        where: 'profile_id = ?',
+        whereArgs: <Object?>[profileId],
+        limit: 1,
+      );
+
+      if (profileRows.isEmpty) {
+        throw const DatabaseValidationException('Profile does not exist.');
+      }
+
+      final Profile currentProfile = Profile.fromMap(profileRows.first);
+      if (currentProfile.profileGold < amount) {
+        throw const DatabaseValidationException('Not enough gold.');
+      }
+
+      await txn.update(
+        DatabaseSchema.profileTable,
+        <String, Object?>{'profile_gold': currentProfile.profileGold - amount},
+        where: 'profile_id = ?',
+        whereArgs: <Object?>[profileId],
+      );
+
+      final List<Map<String, Object?>> updatedRows = await txn.query(
+        DatabaseSchema.profileTable,
+        where: 'profile_id = ?',
+        whereArgs: <Object?>[profileId],
+        limit: 1,
+      );
+
+      return Profile.fromMap(updatedRows.first);
+    });
   }
 
   Future<bool> deleteProfile(int profileId) async {
@@ -369,6 +434,13 @@ class GameRepository {
     if (value < 0) {
       throw DatabaseValidationException('$field cannot be negative.');
     }
+  }
+
+  String _formatDateOnly(DateTime value) {
+    final String year = value.year.toString().padLeft(4, '0');
+    final String month = value.month.toString().padLeft(2, '0');
+    final String day = value.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 }
 
