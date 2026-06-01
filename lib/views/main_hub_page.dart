@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../core/routes.dart';
 import '../core/progression.dart';
+import '../data/models/equipped_cosmetic.dart';
 import '../models/player_save.dart';
 import '../services/save_service.dart';
+import '../services/shop_sound_service.dart';
 import '../widgets/layered_avatar.dart';
 
 class MainHubPage extends StatefulWidget {
@@ -17,7 +19,7 @@ class _MainHubPageState extends State<MainHubPage> {
   final SaveService _saveService = SaveService();
 
   int? _profileId;
-  late Future<PlayerSave?> _saveFuture;
+  late Future<_MainHubViewData?> _hubFuture;
 
   @override
   void didChangeDependencies() {
@@ -27,7 +29,18 @@ class _MainHubPageState extends State<MainHubPage> {
     }
 
     _profileId = ModalRoute.of(context)?.settings.arguments as int?;
-    _saveFuture = _saveService.getSaveById(_profileId ?? -1);
+    _hubFuture = _loadHubData(_profileId ?? -1);
+  }
+
+  Future<_MainHubViewData?> _loadHubData(int profileId) async {
+    final PlayerSave? save = await _saveService.getSaveById(profileId);
+    if (save == null) {
+      return null;
+    }
+
+    final List<EquippedCosmetic> equippedCosmetics = await _saveService
+        .getEquippedCosmeticsForProfile(profileId: profileId);
+    return _MainHubViewData(save: save, equippedCosmetics: equippedCosmetics);
   }
 
   Future<void> _reload() async {
@@ -37,7 +50,7 @@ class _MainHubPageState extends State<MainHubPage> {
     }
 
     setState(() {
-      _saveFuture = _saveService.getSaveById(profileId);
+      _hubFuture = _loadHubData(profileId);
     });
   }
 
@@ -61,10 +74,10 @@ class _MainHubPageState extends State<MainHubPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: FutureBuilder<PlayerSave?>(
-        future: _saveFuture,
+      body: FutureBuilder<_MainHubViewData?>(
+        future: _hubFuture,
         builder: (context, snapshot) {
-          final PlayerSave? save = snapshot.data;
+          final _MainHubViewData? data = snapshot.data;
 
           if (snapshot.connectionState != ConnectionState.done) {
             return const _TownBackground(
@@ -72,12 +85,13 @@ class _MainHubPageState extends State<MainHubPage> {
             );
           }
 
-          if (save == null) {
+          if (data == null) {
             return const _TownBackground(
               child: Center(child: Text('Save profile not found.')),
             );
           }
 
+          final PlayerSave save = data.save;
           return _TownBackground(
             child: SafeArea(
               child: LayoutBuilder(
@@ -128,12 +142,13 @@ class _MainHubPageState extends State<MainHubPage> {
                                 const SizedBox(width: 10),
                                 _ProfileSummary(
                                   save: save,
+                                  equippedCosmetics: data.equippedCosmetics,
                                   onInventoryPressed: () {
                                     Navigator.pushNamed(
                                       context,
                                       AppRoutes.inventory,
                                       arguments: save.profileId,
-                                    );
+                                    ).then((_) => _reload());
                                   },
                                   onProfilePressed: () {
                                     Navigator.pushNamed(
@@ -153,6 +168,8 @@ class _MainHubPageState extends State<MainHubPage> {
                         icon: Icons.science,
                         label: 'Potions',
                         onPressed: () {
+                          ShopSoundService.instance
+                              .playShopEntryAfterButtonClick();
                           Navigator.pushNamed(
                             context,
                             AppRoutes.potionShop,
@@ -165,6 +182,8 @@ class _MainHubPageState extends State<MainHubPage> {
                         icon: Icons.checkroom,
                         label: 'Threads',
                         onPressed: () {
+                          ShopSoundService.instance
+                              .playShopEntryAfterButtonClick();
                           Navigator.pushNamed(
                             context,
                             AppRoutes.threadShop,
@@ -269,19 +288,7 @@ class _HubIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.38),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-      ),
-      child: IconButton(
-        tooltip: tooltip,
-        onPressed: onPressed,
-        color: Colors.white,
-        icon: Icon(icon),
-      ),
-    );
+    return IconButton(tooltip: tooltip, onPressed: onPressed, icon: Icon(icon));
   }
 }
 
@@ -309,18 +316,12 @@ class _ShopHotspot extends StatelessWidget {
           icon: Icon(icon, size: 14),
           label: Text(label),
           style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xCC2B2117),
-            foregroundColor: const Color(0xFFFFF2D4),
             padding: const EdgeInsets.symmetric(horizontal: 9),
             minimumSize: const Size(0, 34),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             textStyle: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w800,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(7),
-              side: const BorderSide(color: Color(0x99F3D49C)),
             ),
           ),
         ),
@@ -332,11 +333,13 @@ class _ShopHotspot extends StatelessWidget {
 class _ProfileSummary extends StatelessWidget {
   const _ProfileSummary({
     required this.save,
+    required this.equippedCosmetics,
     required this.onInventoryPressed,
     required this.onProfilePressed,
   });
 
   final PlayerSave save;
+  final List<EquippedCosmetic> equippedCosmetics;
   final VoidCallback onInventoryPressed;
   final VoidCallback onProfilePressed;
 
@@ -359,7 +362,11 @@ class _ProfileSummary extends StatelessWidget {
             child: InkWell(
               borderRadius: BorderRadius.circular(999),
               onTap: onProfilePressed,
-              child: LayeredAvatar(playerClass: save.playerClass, size: 58),
+              child: LayeredAvatar(
+                playerClass: save.playerClass,
+                equippedCosmetics: equippedCosmetics,
+                size: 58,
+              ),
             ),
           ),
           const SizedBox(height: 10),
@@ -391,14 +398,6 @@ class _ProfileSummary extends StatelessWidget {
             textAlign: TextAlign.right,
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '${save.elo} Elo',
-            textAlign: TextAlign.right,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
           const SizedBox(height: 10),
           SizedBox(
             height: 34,
@@ -407,18 +406,12 @@ class _ProfileSummary extends StatelessWidget {
               icon: const Icon(Icons.inventory_2, size: 14),
               label: const Text('Inventory'),
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xCC2B2117),
-                foregroundColor: const Color(0xFFFFF2D4),
                 padding: const EdgeInsets.symmetric(horizontal: 9),
                 minimumSize: const Size(0, 34),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 textStyle: const TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(7),
-                  side: const BorderSide(color: Color(0x99F3D49C)),
                 ),
               ),
             ),
@@ -427,6 +420,13 @@ class _ProfileSummary extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MainHubViewData {
+  const _MainHubViewData({required this.save, required this.equippedCosmetics});
+
+  final PlayerSave save;
+  final List<EquippedCosmetic> equippedCosmetics;
 }
 
 class _StreakPill extends StatelessWidget {

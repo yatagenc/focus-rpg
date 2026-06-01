@@ -9,6 +9,7 @@ import '../models/player_save.dart';
 import '../models/potion_definition.dart';
 import '../models/potion_effect_type.dart';
 import '../services/focus_event_service.dart';
+import '../services/ambient_audio_service.dart';
 import '../services/inventory_service.dart';
 import '../services/save_service.dart';
 import '../widgets/focus_event_dialog.dart';
@@ -37,6 +38,7 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
   final SaveService _saveService = SaveService();
   final InventoryService _inventoryService = InventoryService.instance;
   final FocusEventService _eventService = FocusEventService();
+  final AmbientAudioService _ambientAudioService = AmbientAudioService.instance;
 
   Timer? _timer;
   int? _profileId;
@@ -62,6 +64,7 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
   int _failedFocusEvents = 0;
   int? _nextFocusEventAtMilliseconds;
   bool _isFocusEventActive = false;
+  String? _selectedAmbientSoundId;
   final List<FocusEventResult> _eventResults = <FocusEventResult>[];
   String? _eventLog;
 
@@ -93,6 +96,7 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
   @override
   void dispose() {
     _timer?.cancel();
+    unawaited(_ambientAudioService.stop());
     super.dispose();
   }
 
@@ -260,15 +264,162 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
     Navigator.of(context).pop(false);
   }
 
-  void _addTestMinute() {
-    if (!_isRunning) {
+  Future<void> _openAmbientSoundMenu() async {
+    String? draftSoundId = _selectedAmbientSoundId;
+
+    final String? selectedSoundId = await showGeneralDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close ambient sound menu',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 220),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final Animation<Offset> offsetAnimation =
+            Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            );
+
+        return SlideTransition(position: offsetAnimation, child: child);
+      },
+      pageBuilder: (context, animation, secondaryAnimation) {
+        final Size screenSize = MediaQuery.sizeOf(context);
+        final double panelWidth = (screenSize.width * 0.72).clamp(280.0, 340.0);
+        final double panelHeight = (screenSize.height * 0.56).clamp(
+          360.0,
+          480.0,
+        );
+
+        return SafeArea(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: SizedBox(
+              width: panelWidth,
+              height: panelHeight,
+              child: Material(
+                color: Theme.of(context).colorScheme.surface,
+                elevation: 12,
+                borderRadius: const BorderRadius.horizontal(
+                  left: Radius.circular(18),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: StatefulBuilder(
+                  builder: (context, setSheetState) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Ambient Sound',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 12),
+                          Expanded(
+                            child: GridView.builder(
+                              itemCount: AmbientAudioService.sounds.length,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 1,
+                                    mainAxisSpacing: 10,
+                                    childAspectRatio: 4.2,
+                                  ),
+                              itemBuilder: (context, index) {
+                                final AmbientSound sound =
+                                    AmbientAudioService.sounds[index];
+                                final bool isSelected =
+                                    draftSoundId == sound.id;
+                                return OutlinedButton.icon(
+                                  onPressed: () {
+                                    setSheetState(() {
+                                      draftSoundId = sound.id;
+                                    });
+                                  },
+                                  icon: Icon(
+                                    isSelected
+                                        ? Icons.radio_button_checked
+                                        : Icons.radio_button_unchecked,
+                                  ),
+                                  label: Text(
+                                    sound.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    alignment: Alignment.centerLeft,
+                                    side: isSelected
+                                        ? BorderSide(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                            width: 2,
+                                          )
+                                        : null,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(null),
+                                  child: const Text('Cancel'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: FilledButton(
+                                  onPressed: draftSoundId == null
+                                      ? null
+                                      : () => Navigator.of(
+                                          context,
+                                        ).pop(draftSoundId),
+                                  child: const Text('OK'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selectedSoundId == null) {
+      return;
+    }
+
+    final AmbientSound sound = AmbientAudioService.sounds.firstWhere(
+      (AmbientSound sound) => sound.id == selectedSoundId,
+    );
+    try {
+      await _ambientAudioService.play(sound);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showSnack('Ambient sound could not be played.');
+      return;
+    }
+
+    if (!mounted) {
       return;
     }
 
     setState(() {
-      _focusAccumulatedMilliseconds += 60000;
-      _elapsedMilliseconds += 60000;
+      _selectedAmbientSoundId = sound.id;
     });
+    _showSnack('${sound.label} selected.');
   }
 
   void _recalculatePotionEffects() {
@@ -558,137 +709,186 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
 
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: 0,
         leading: IconButton(
           tooltip: 'Back',
           onPressed: _isSaving || _isStarting ? null : _cancelSession,
           icon: const Icon(Icons.arrow_back),
         ),
         title: const Text('Focus Session'),
-      ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 390),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: _TotalSessionPill(totalTimerText: totalTimerText),
-                  ),
-                  const SizedBox(height: 10),
-                  _FocusEventStatusPill(
-                    secondsUntilNext: _secondsUntilNextFocusEvent(),
-                    isActive: _isFocusEventActive,
-                    completedCount: _completedFocusEvents,
-                    failedCount: _failedFocusEvents,
-                    bonusGold: _eventBonusGold,
-                    bonusXp: _eventBonusXp,
-                    formatDuration: _formatDuration,
-                  ),
-                  if (_selectedPotionIds.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    _ActivePotionEffects(effects: _sessionEffects),
-                  ],
-                  const Spacer(),
-                  Text(
-                    timerText,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 56,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _statusText(),
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  if (_isBreakActive) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Break ${_formatDuration(_breakRemainingSeconds)}',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ],
-                  const Spacer(),
-                  if (_eventLog != null) ...[
-                    Text(
-                      _eventLog!,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  SizedBox(
-                    height: 54,
-                    child: _primarySessionButton(breakProgress),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 50,
-                    child: OutlinedButton.icon(
-                      onPressed:
-                          _isRunning &&
-                              !_isSaving &&
-                              !_isStarting &&
-                              !_isFocusEventActive
-                          ? _openPotionBag
-                          : null,
-                      icon: const Icon(Icons.inventory_2),
-                      label: Text(_isUsingPotion ? 'Using...' : 'Use Potion'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 50,
-                    child: OutlinedButton.icon(
-                      onPressed:
-                          _isRunning &&
-                              !_isSaving &&
-                              !_isStarting &&
-                              !_isFocusEventActive
-                          ? _addTestMinute
-                          : null,
-                      icon: const Icon(Icons.add),
-                      label: const Text('+1 min'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 54,
-                    child: FilledButton.icon(
-                      onPressed:
-                          _isRunning &&
-                              !_isSaving &&
-                              !_isBreakActive &&
-                              !_isStarting &&
-                              !_isFocusEventActive
-                          ? _complete
-                          : null,
-                      icon: const Icon(Icons.check),
-                      label: Text(_isSaving ? 'Saving...' : 'Complete Session'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 50,
-                    child: OutlinedButton(
-                      onPressed: _isSaving || _isStarting
-                          ? null
-                          : _cancelSession,
-                      child: const Text('Cancel'),
-                    ),
-                  ),
-                ],
-              ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: _TotalSessionPill(totalTimerText: totalTimerText),
             ),
           ),
+        ],
+      ),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 390),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 6, 24, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _FocusEventStatusPill(
+                        secondsUntilNext: _secondsUntilNextFocusEvent(),
+                        isActive: _isFocusEventActive,
+                        completedCount: _completedFocusEvents,
+                        failedCount: _failedFocusEvents,
+                        bonusGold: _eventBonusGold,
+                        bonusXp: _eventBonusXp,
+                        formatDuration: _formatDuration,
+                      ),
+                      if (_selectedPotionIds.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _ActivePotionEffects(effects: _sessionEffects),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: _PotionMenuButton(
+                            isEnabled:
+                                _isRunning &&
+                                !_isSaving &&
+                                !_isStarting &&
+                                !_isFocusEventActive,
+                            isUsingPotion: _isUsingPotion,
+                            onPressed: _openPotionBag,
+                          ),
+                        ),
+                      ] else ...[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: _PotionMenuButton(
+                            isEnabled:
+                                _isRunning &&
+                                !_isSaving &&
+                                !_isStarting &&
+                                !_isFocusEventActive,
+                            isUsingPotion: _isUsingPotion,
+                            onPressed: _openPotionBag,
+                          ),
+                        ),
+                      ],
+                      const Spacer(),
+                      Text(
+                        timerText,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 56,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _statusText(),
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      if (_isBreakActive) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          'Break ${_formatDuration(_breakRemainingSeconds)}',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ],
+                      const Spacer(),
+                      if (_eventLog != null) ...[
+                        Text(
+                          _eventLog!,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      SizedBox(
+                        height: 54,
+                        child: _primarySessionButton(breakProgress),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 46,
+                              child: OutlinedButton(
+                                onPressed: _isSaving || _isStarting
+                                    ? null
+                                    : _cancelSession,
+                                child: const Text('Cancel'),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: SizedBox(
+                              height: 46,
+                              child: FilledButton(
+                                onPressed:
+                                    _isRunning &&
+                                        !_isSaving &&
+                                        !_isBreakActive &&
+                                        !_isStarting &&
+                                        !_isFocusEventActive
+                                    ? _complete
+                                    : null,
+                                style: FilledButton.styleFrom(
+                                  textStyle: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.05,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.check, size: 17),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(
+                                        _isSaving
+                                            ? 'Saving...'
+                                            : 'Complete\nSession',
+                                        maxLines: 2,
+                                        overflow: TextOverflow.visible,
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: _AmbientDrawerTab(
+                  isEnabled: !_isSaving && !_isStarting,
+                  onPressed: _openAmbientSoundMenu,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -732,6 +932,81 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
     final int minutes = totalSeconds ~/ 60;
     final int seconds = totalSeconds % 60;
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+}
+
+class _AmbientDrawerTab extends StatelessWidget {
+  const _AmbientDrawerTab({required this.isEnabled, required this.onPressed});
+
+  final bool isEnabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+
+    return Semantics(
+      button: true,
+      enabled: isEnabled,
+      onTap: isEnabled ? onPressed : null,
+      child: Material(
+        color: isEnabled
+            ? colors.primaryContainer
+            : colors.surfaceContainerHigh,
+        elevation: isEnabled ? 4 : 0,
+        borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: isEnabled ? onPressed : null,
+          child: SizedBox(
+            width: 34,
+            height: 52,
+            child: Center(
+              child: Text(
+                '<',
+                style: TextStyle(
+                  color: isEnabled
+                      ? colors.onPrimaryContainer
+                      : colors.onSurfaceVariant,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PotionMenuButton extends StatelessWidget {
+  const _PotionMenuButton({
+    required this.isEnabled,
+    required this.isUsingPotion,
+    required this.onPressed,
+  });
+
+  final bool isEnabled;
+  final bool isUsingPotion;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 38,
+      child: OutlinedButton.icon(
+        onPressed: isEnabled ? onPressed : null,
+        icon: const Icon(Icons.local_drink, size: 18),
+        label: Text(isUsingPotion ? 'Using...' : 'Potions'),
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          textStyle: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
   }
 }
 
@@ -978,49 +1253,54 @@ class _BreakProgressButton extends StatelessWidget {
         ? colors.primary
         : colors.onSurfaceVariant;
 
-    return Material(
-      color: colors.surface,
-      borderRadius: borderRadius,
-      child: InkWell(
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      onTap: enabled ? onPressed : null,
+      child: Material(
+        color: colors.surface,
         borderRadius: borderRadius,
-        onTap: enabled ? onPressed : null,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: borderRadius,
-            border: Border.all(color: borderColor),
-          ),
-          child: ClipRRect(
-            borderRadius: borderRadius,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: progress,
-                  child: ColoredBox(
-                    color: colors.primary.withValues(alpha: 0.32),
+        child: InkWell(
+          borderRadius: borderRadius,
+          onTap: enabled ? onPressed : null,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: borderRadius,
+              border: Border.all(color: borderColor),
+            ),
+            child: ClipRRect(
+              borderRadius: borderRadius,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: progress,
+                    child: ColoredBox(
+                      color: colors.primary.withValues(alpha: 0.32),
+                    ),
                   ),
-                ),
-                Center(
-                  child: IconTheme(
-                    data: IconThemeData(color: contentColor, size: 20),
-                    child: DefaultTextStyle(
-                      style: TextStyle(
-                        color: contentColor,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.free_breakfast),
-                          const SizedBox(width: 10),
-                          Text(label),
-                        ],
+                  Center(
+                    child: IconTheme(
+                      data: IconThemeData(color: contentColor, size: 20),
+                      child: DefaultTextStyle(
+                        style: TextStyle(
+                          color: contentColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.free_breakfast),
+                            const SizedBox(width: 10),
+                            Text(label),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

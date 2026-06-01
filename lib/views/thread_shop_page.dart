@@ -7,6 +7,7 @@ import '../models/cosmetic_definition.dart';
 import '../models/cosmetic_type.dart';
 import '../models/player_save.dart';
 import '../services/save_service.dart';
+import '../services/shop_sound_service.dart';
 
 class ThreadShopPage extends StatefulWidget {
   const ThreadShopPage({super.key});
@@ -149,7 +150,11 @@ class _ThreadShopPageState extends State<ThreadShopPage> {
                           child: Row(
                             children: [
                               _BackButton(
-                                onPressed: () => Navigator.pop(context),
+                                onPressed: () {
+                                  ShopSoundService.instance
+                                      .playDoorAfterButtonClick();
+                                  Navigator.pop(context);
+                                },
                               ),
                               const SizedBox(width: 8),
                               const _ShopTitle(
@@ -270,14 +275,6 @@ class _ThreadTabs extends StatelessWidget {
       onSelectionChanged: (Set<CosmeticType> value) {
         onChanged(value.first);
       },
-      style: SegmentedButton.styleFrom(
-        backgroundColor: const Color(0xAA16110C),
-        selectedBackgroundColor: const Color(0xFFE7B957),
-        selectedForegroundColor: const Color(0xFF1C160E),
-        foregroundColor: const Color(0xFFFFF2D4),
-        side: const BorderSide(color: Color(0x99F3D49C)),
-        textStyle: const TextStyle(fontWeight: FontWeight.w900),
-      ),
     );
   }
 }
@@ -389,18 +386,10 @@ class _BackButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-      ),
-      child: IconButton(
-        tooltip: 'Back',
-        onPressed: onPressed,
-        color: Colors.white,
-        icon: const Icon(Icons.arrow_back),
-      ),
+    return IconButton(
+      tooltip: 'Back',
+      onPressed: onPressed,
+      icon: const Icon(Icons.arrow_back),
     );
   }
 }

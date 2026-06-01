@@ -39,6 +39,7 @@ dependencies:
   sqflite: ^2.4.2
   sqflite_common_ffi: ^2.3.6
   video_player: ^2.10.1
+  audioplayers: ^6.1.0
 
 dev_dependencies:
   flutter_test:
@@ -72,7 +73,13 @@ flutter:
     - assets/videos/avatars/
     - assets/images/cosmetics/hats/
     - assets/images/cosmetics/torso/
+    - assets/images/cosmetics/layers/hats/
+    - assets/images/cosmetics/layers/torso/
+    - assets/images/cosmetics/layers/weapons/
+    - assets/images/cosmetics/layers/frames/
     - assets/images/cosmetics/frames/
+    - assets/sounds/
+    - ambience_sounds/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
