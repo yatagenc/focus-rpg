@@ -2,7 +2,7 @@ class DatabaseSchema {
   DatabaseSchema._();
 
   static const String databaseName = 'focus_rpg.db';
-  static const int databaseVersion = 7;
+  static const int databaseVersion = 8;
 
   static const String profileTable = 'Profile';
   static const String sessionTable = 'Session';
@@ -153,6 +153,10 @@ class DatabaseSchema {
         (2302, 'Gray Crystal Scout Armor', 'torso', 'archer'),
         (2401, 'Auditore Robe', 'torso', 'thief'),
         (2402, 'Rust Leather Skull Vest', 'torso', 'thief'),
+        (4101, 'Mage Staff', 'weapon', 'mage'),
+        (4201, 'Knight Sword', 'weapon', 'knight'),
+        (4301, 'Archer Bow', 'weapon', 'archer'),
+        (4401, 'Thief Dagger', 'weapon', 'thief'),
         (3001, 'Wooden Profile Frame', 'frame', 'all'),
         (3002, 'Bronze Profile Frame', 'frame', 'all'),
         (3003, 'Silver Profile Frame', 'frame', 'all'),

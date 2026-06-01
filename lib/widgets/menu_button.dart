@@ -13,13 +13,6 @@ class MenuButton extends StatelessWidget {
       width: double.infinity,
       child: ElevatedButton(
         onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.orange,
-          foregroundColor: Colors.black,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
         child: Text(
           text,
           style: const TextStyle(

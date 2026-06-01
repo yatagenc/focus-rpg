@@ -6,16 +6,19 @@ class AvatarEquipment {
   const AvatarEquipment({
     required this.hat,
     required this.torso,
+    required this.weapon,
     required this.frame,
   });
 
   final CosmeticDefinition hat;
   final CosmeticDefinition torso;
+  final CosmeticDefinition weapon;
   final CosmeticDefinition frame;
 
   List<CosmeticDefinition> get layers => <CosmeticDefinition>[
     torso,
     hat,
+    weapon,
     frame,
   ];
 

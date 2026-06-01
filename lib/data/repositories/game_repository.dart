@@ -18,6 +18,8 @@ class GameRepository {
   GameRepository({AppDatabase? database})
     : _database = database ?? AppDatabase.instance;
 
+  static const int startingGoldForNewProfiles = 1000;
+
   final AppDatabase _database;
 
   Future<Profile> createProfile({
@@ -48,12 +50,18 @@ class GameRepository {
         INSERT INTO ${DatabaseSchema.profileTable} (
           profile_id,
           profile_class,
+          profile_gold,
           profile_created_at
         )
-        SELECT ?, ?, ?
+        SELECT ?, ?, ?, ?
         WHERE (SELECT COUNT(*) FROM ${DatabaseSchema.profileTable}) < 3
         ''',
-        <Object?>[profileId, profileClass.toLowerCase(), timestamp],
+        <Object?>[
+          profileId,
+          profileClass.toLowerCase(),
+          startingGoldForNewProfiles,
+          timestamp,
+        ],
       );
 
       // Critical 3-profile rule is enforced here and at the SQLite trigger level.
@@ -66,6 +74,7 @@ class GameRepository {
       await _grantDefaultCosmetics(
         txn: txn,
         profileId: profileId,
+        profileClass: profileClass,
         timestamp: timestamp,
       );
 
@@ -481,6 +490,7 @@ class GameRepository {
 
   Future<List<OwnedCosmetic>> getOwnedCosmeticsForProfile(int profileId) async {
     final Database db = await _database.database;
+    await _ensureDefaultCosmeticsForProfile(db: db, profileId: profileId);
     final List<Map<String, Object?>> rows = await db.query(
       DatabaseSchema.ownedCosmeticsTable,
       where: 'profile_id = ?',
@@ -531,6 +541,7 @@ class GameRepository {
     int profileId,
   ) async {
     final Database db = await _database.database;
+    await _ensureDefaultCosmeticsForProfile(db: db, profileId: profileId);
     final List<Map<String, Object?>> rows = await db.query(
       DatabaseSchema.equippedCosmeticsTable,
       where: 'profile_id = ?',
@@ -579,9 +590,13 @@ class GameRepository {
   Future<void> _grantDefaultCosmetics({
     required Transaction txn,
     required int profileId,
+    required String profileClass,
     required String timestamp,
   }) async {
-    for (final int cosmeticId in CosmeticCatalog.defaultCosmeticIds) {
+    final String normalizedClass = profileClass.toLowerCase();
+    for (final int cosmeticId in CosmeticCatalog.defaultCosmeticIdsForClass(
+      normalizedClass,
+    )) {
       await txn.insert(
         DatabaseSchema.ownedCosmeticsTable,
         OwnedCosmetic(
@@ -593,11 +608,8 @@ class GameRepository {
       );
     }
 
-    final Map<CosmeticType, int> defaultEquipment = <CosmeticType, int>{
-      CosmeticType.hat: CosmeticCatalog.defaultHatId,
-      CosmeticType.torso: CosmeticCatalog.defaultTorsoId,
-      CosmeticType.frame: CosmeticCatalog.defaultWoodFrameId,
-    };
+    final Map<CosmeticType, int> defaultEquipment =
+        CosmeticCatalog.defaultEquipmentIdsForClass(normalizedClass);
 
     for (final MapEntry<CosmeticType, int> entry in defaultEquipment.entries) {
       await txn.insert(
@@ -609,6 +621,39 @@ class GameRepository {
           equippedAt: timestamp,
         ).toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+  }
+
+  Future<void> _ensureDefaultCosmeticsForProfile({
+    required Database db,
+    required int profileId,
+  }) async {
+    final List<Map<String, Object?>> profileRows = await db.query(
+      DatabaseSchema.profileTable,
+      columns: <String>['profile_class'],
+      where: 'profile_id = ?',
+      whereArgs: <Object?>[profileId],
+      limit: 1,
+    );
+    if (profileRows.isEmpty) {
+      return;
+    }
+
+    final String profileClass =
+        profileRows.first['profile_class'] as String? ?? '';
+    final String timestamp = DateTime.now().toIso8601String();
+    for (final int cosmeticId in CosmeticCatalog.defaultCosmeticIdsForClass(
+      profileClass,
+    )) {
+      await db.insert(
+        DatabaseSchema.ownedCosmeticsTable,
+        OwnedCosmetic(
+          profileId: profileId,
+          cosmeticId: cosmeticId,
+          unlockedAt: timestamp,
+        ).toMap(),
+        conflictAlgorithm: ConflictAlgorithm.ignore,
       );
     }
   }

@@ -26,31 +26,39 @@ void main() {
     test('maps classes to framed avatar icon assets', () {
       expect(
         CosmeticCatalog.iconAvatarPathForClass('Mage'),
-        'assets/images/avatars/icons/mage_icon.png',
+        'assets/images/avatars/base/bare_mage_icon.png',
       );
       expect(
         CosmeticCatalog.iconAvatarPathForClass('Knight'),
-        'assets/images/avatars/icons/knight_icon.png',
+        'assets/images/avatars/base/bare_knight_icon.png',
       );
       expect(
         CosmeticCatalog.iconAvatarPathForClass('Archer'),
-        'assets/images/avatars/icons/archer_icon.png',
+        'assets/images/avatars/base/bare_archer_icon.png',
       );
       expect(
         CosmeticCatalog.iconAvatarPathForClass('Thief'),
-        'assets/images/avatars/icons/thief_icon.png',
+        'assets/images/avatars/base/bare_thief_icon.png',
       );
     });
 
-    test('returns default equipment when no equipped ids are present', () {
-      final equipment = CosmeticCatalog.equipmentFromIds(
-        const <CosmeticType, int>{},
-      );
+    test(
+      'returns class default equipment when no equipped ids are present',
+      () {
+        final equipment = CosmeticCatalog.equipmentFromIds(
+          playerClass: 'Mage',
+          equippedIds: const <CosmeticType, int>{},
+        );
 
-      expect(equipment.hat.cosmeticId, CosmeticCatalog.defaultHatId);
-      expect(equipment.torso.cosmeticId, CosmeticCatalog.defaultTorsoId);
-      expect(equipment.frame.cosmeticId, CosmeticCatalog.defaultWoodFrameId);
-    });
+        expect(equipment.hat.cosmeticId, 1101);
+        expect(equipment.torso.cosmeticId, 2101);
+        expect(
+          equipment.weapon.cosmeticId,
+          CosmeticCatalog.defaultMageWeaponId,
+        );
+        expect(equipment.frame.cosmeticId, CosmeticCatalog.defaultWoodFrameId);
+      },
+    );
 
     test('defines rank frame tiers', () {
       final frameTiers = CosmeticCatalog.cosmetics

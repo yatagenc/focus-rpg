@@ -6,6 +6,7 @@ import '../models/player_save.dart';
 import '../models/potion_definition.dart';
 import '../services/inventory_service.dart';
 import '../services/save_service.dart';
+import '../services/shop_sound_service.dart';
 import '../widgets/potion_card.dart';
 import '../widgets/potion_detail_sheet.dart';
 
@@ -216,7 +217,11 @@ class _PotionShopPageState extends State<PotionShopPage> {
                                 child: Row(
                                   children: [
                                     _BackButton(
-                                      onPressed: () => Navigator.pop(context),
+                                      onPressed: () {
+                                        ShopSoundService.instance
+                                            .playDoorAfterButtonClick();
+                                        Navigator.pop(context);
+                                      },
                                     ),
                                     const SizedBox(width: 8),
                                     _ShopTitle(
@@ -464,18 +469,10 @@ class _BackButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-      ),
-      child: IconButton(
-        tooltip: 'Back',
-        onPressed: onPressed,
-        color: Colors.white,
-        icon: const Icon(Icons.arrow_back),
-      ),
+    return IconButton(
+      tooltip: 'Back',
+      onPressed: onPressed,
+      icon: const Icon(Icons.arrow_back),
     );
   }
 }

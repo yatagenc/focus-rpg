@@ -2,11 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'core/app_theme.dart';
 import 'core/routes.dart';
 import 'data/database/app_database.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/potion_selection_screen.dart';
+import 'services/button_click_sound_service.dart';
 import 'services/settings_service.dart';
+import 'services/shop_sound_service.dart';
 import 'views/character_selection_page.dart';
 import 'views/focus_session_page.dart';
 import 'views/main_hub_page.dart';
@@ -26,6 +29,8 @@ Future<void> main() async {
     await AppDatabase.instance.database;
   }
   await SettingsService.instance.load();
+  await ButtonClickSoundService.instance.initialize();
+  await ShopSoundService.instance.initialize();
   runApp(const FocusRPGApp());
 }
 
@@ -40,21 +45,14 @@ class FocusRPGApp extends StatelessWidget {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           title: 'Focus RPG',
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFFE3A704),
-              brightness: Brightness.light,
-            ),
-            useMaterial3: true,
-          ),
-          darkTheme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFFE3A704),
-              brightness: Brightness.dark,
-            ),
-            useMaterial3: true,
-          ),
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
           themeMode: settings.darkMode ? ThemeMode.dark : ThemeMode.light,
+          builder: (context, child) {
+            return ButtonClickSoundLayer(
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           initialRoute: AppRoutes.home,
           routes: {
             AppRoutes.home: (context) => const MainMenuPage(),

@@ -53,11 +53,6 @@ class MainMenuPage extends StatelessWidget {
                           onPressed: () {
                             Navigator.pushNamed(context, AppRoutes.settings);
                           },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Color(0xCCFFFFFF)),
-                            backgroundColor: const Color(0x33000000),
-                          ),
                           icon: const Icon(Icons.tune),
                           label: const Text('Settings'),
                         ),

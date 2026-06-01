@@ -70,6 +70,9 @@ class AppDatabase {
         if (oldVersion < 7) {
           await db.execute(DatabaseSchema.seedCosmeticsStatement());
         }
+        if (oldVersion < 8) {
+          await db.execute(DatabaseSchema.seedCosmeticsStatement());
+        }
       },
     );
   }

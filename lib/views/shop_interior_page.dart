@@ -58,15 +58,9 @@ class ShopInteriorPage extends StatelessWidget {
                         icon: const Icon(Icons.door_back_door),
                         label: const Text('Exit'),
                         style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xDD2B2117),
-                          foregroundColor: const Color(0xFFFFF2D4),
                           textStyle: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            side: const BorderSide(color: Color(0x99F3D49C)),
                           ),
                         ),
                       ),
@@ -89,21 +83,13 @@ class _BackButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-      ),
-      child: TextButton.icon(
-        onPressed: onPressed,
-        icon: const Icon(Icons.arrow_back),
-        label: const Text('Back'),
-        style: TextButton.styleFrom(
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          textStyle: const TextStyle(fontWeight: FontWeight.w800),
-        ),
+    return TextButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.arrow_back),
+      label: const Text('Back'),
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        textStyle: const TextStyle(fontWeight: FontWeight.w800),
       ),
     );
   }

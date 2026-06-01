@@ -16,6 +16,8 @@ class SaveService {
     : _repository = repository ?? GameRepository(),
       _useMemoryStore = repository == null && kIsWeb;
 
+  static const int startingGoldForNewSaves = 1000;
+
   final GameRepository _repository;
   final bool _useMemoryStore;
   final WebSaveStorage _webStorage = WebSaveStorage();
@@ -63,7 +65,7 @@ class SaveService {
         playerClass: playerClass.toLowerCase(),
         level: 1,
         xp: 0,
-        gold: 0,
+        gold: startingGoldForNewSaves,
         elo: 0,
         createdAt: DateTime.now().toIso8601String(),
         totalStudyMinutes: 0,
