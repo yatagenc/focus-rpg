@@ -3,6 +3,7 @@ import 'package:video_player/video_player.dart';
 
 import '../models/player_save.dart';
 import '../services/save_service.dart';
+import '../widgets/app_safe_layout.dart';
 
 class CharacterSelectionPage extends StatefulWidget {
   const CharacterSelectionPage({super.key});
@@ -38,6 +39,7 @@ class _CharacterSelectionPageState extends State<CharacterSelectionPage> {
       subtitle: 'Precise striker',
       summary: 'Excels at short, accurate goals and fast task completion.',
       assetPath: 'assets/images/avatars/base/default_archer_full.png',
+      videoPath: 'assets/videos/avatars/default_archer_video.mp4',
       color: Color(0xFF2F6B3A),
       accentColor: Color(0xFF8FB34B),
       traits: <String>['Precision', 'Short sprints', 'Targeting'],
@@ -117,91 +119,121 @@ class _CharacterSelectionPageState extends State<CharacterSelectionPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 390),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Choose a class',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Tap a class to inspect its role and starting profile.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: ListView.separated(
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: _classes.length,
-                      separatorBuilder: (context, index) =>
-                          const SizedBox(height: 12),
-                      itemBuilder: (context, index) {
-                        final _ClassProfile profile = _classes[index];
-                        final bool isSelected = _selectedClass == profile.name;
-
-                        return GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            setState(() {
-                              _selectedClass = profile.name;
-                              _selectionTrigger++;
-                            });
-                          },
-                          child: _ClassCard(
-                            profile: profile,
-                            isSelected: isSelected,
-                            playbackTrigger: _selectionTrigger,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: 50,
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.of(context).maybePop(),
-                            child: const Text('Back'),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: SizedBox(
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: _selectedClass == null || _isSaving
-                                ? null
-                                : _createProfile,
-                            child: Text(_isSaving ? 'Saving...' : 'Continue'),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+      body: AppSafeLayout(
+        maxWidth: 390,
+        center: true,
+        horizontal: 16,
+        top: 4,
+        bottom: 12,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Choose a class',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _ClassCardsLayout(
+                profiles: _classes,
+                selectedClass: _selectedClass,
+                playbackTrigger: _selectionTrigger,
+                onSelected: (_ClassProfile profile) {
+                  setState(() {
+                    _selectedClass = profile.name;
+                    _selectionTrigger++;
+                  });
+                },
               ),
             ),
-          ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 50,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('Back'),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SizedBox(
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: _selectedClass == null || _isSaving
+                          ? null
+                          : _createProfile,
+                      child: Text(_isSaving ? 'Saving...' : 'Continue'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _ClassCardsLayout extends StatelessWidget {
+  const _ClassCardsLayout({
+    required this.profiles,
+    required this.selectedClass,
+    required this.playbackTrigger,
+    required this.onSelected,
+  });
+
+  final List<_ClassProfile> profiles;
+  final String? selectedClass;
+  final int playbackTrigger;
+  final ValueChanged<_ClassProfile> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const double gap = 10;
+        final bool hasSelection = selectedClass != null;
+        final double availableHeight = constraints.maxHeight;
+        final double cardAreaHeight = availableHeight - gap * 3;
+        final double selectedHeight = hasSelection
+            ? (cardAreaHeight * 0.34).clamp(206.0, 230.0)
+            : cardAreaHeight / 4;
+        final double unselectedHeight = hasSelection
+            ? (cardAreaHeight - selectedHeight) / 3
+            : selectedHeight;
+
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            for (int index = 0; index < profiles.length; index++) ...[
+              Builder(
+                builder: (context) {
+                  final _ClassProfile profile = profiles[index];
+                  final bool isSelected = selectedClass == profile.name;
+
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onSelected(profile),
+                    child: _ClassCard(
+                      profile: profile,
+                      isSelected: isSelected,
+                      playbackTrigger: playbackTrigger,
+                      height: isSelected ? selectedHeight : unselectedHeight,
+                    ),
+                  );
+                },
+              ),
+              if (index != profiles.length - 1) const SizedBox(height: gap),
+            ],
+          ],
+        );
+      },
     );
   }
 }
@@ -233,11 +265,13 @@ class _ClassCard extends StatelessWidget {
     required this.profile,
     required this.isSelected,
     required this.playbackTrigger,
+    required this.height,
   });
 
   final _ClassProfile profile;
   final bool isSelected;
   final int playbackTrigger;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -246,7 +280,7 @@ class _ClassCard extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
-      height: isSelected ? 232 : 118,
+      height: height,
       decoration: BoxDecoration(
         color: Color.lerp(
           colors.surfaceContainerHighest,
@@ -299,7 +333,7 @@ class _ClassCard extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 124, 14),
+            padding: EdgeInsets.fromLTRB(16, 14, isSelected ? 184 : 124, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -367,7 +401,7 @@ class _ClassCard extends StatelessWidget {
                   switchInCurve: Curves.easeOutCubic,
                   switchOutCurve: Curves.easeInCubic,
                   child: isSelected
-                      ? _ExpandedClassDetails(profile: profile)
+                      ? Expanded(child: _ExpandedClassDetails(profile: profile))
                       : const SizedBox.shrink(),
                 ),
               ],
@@ -440,34 +474,54 @@ class _OneShotClassVideo extends StatefulWidget {
 class _OneShotClassVideoState extends State<_OneShotClassVideo> {
   late final VideoPlayerController _controller;
   bool _isReady = false;
+  bool _hasFinished = false;
 
   @override
   void initState() {
     super.initState();
     _controller = VideoPlayerController.asset(widget.assetPath)
       ..setLooping(false)
-      ..setVolume(0)
-      ..initialize().then((_) {
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _isReady = true;
-        });
-        _controller.seekTo(Duration.zero);
-        _controller.play();
+      ..setVolume(0);
+    _controller.addListener(_handlePlayback);
+    _controller.initialize().then((_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isReady = true;
+        _hasFinished = false;
       });
+      _controller.seekTo(Duration.zero);
+      _controller.play();
+    });
+  }
+
+  void _handlePlayback() {
+    if (!mounted || !_controller.value.isInitialized || _hasFinished) {
+      return;
+    }
+
+    final Duration duration = _controller.value.duration;
+    final Duration position = _controller.value.position;
+    if (duration > Duration.zero &&
+        position >= duration - const Duration(milliseconds: 80)) {
+      setState(() {
+        _hasFinished = true;
+      });
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller
+      ..removeListener(_handlePlayback)
+      ..dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isReady) {
+    if (!_isReady || _hasFinished) {
       return Image.asset(
         widget.fallbackAssetPath,
         fit: BoxFit.contain,
@@ -494,59 +548,82 @@ class _ExpandedClassDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
+    const Color textColor = Color(0xFFF1ECE3);
 
     return Padding(
       key: ValueKey<String>(profile.name),
-      padding: const EdgeInsets.only(top: 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            profile.summary,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: colors.onSurface,
-              fontSize: 13,
-              height: 1.25,
-              fontWeight: FontWeight.w600,
+      padding: const EdgeInsets.only(top: 10),
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 206),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xDD17120D),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: profile.accentColor.withValues(alpha: 0.28),
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 7,
-            runSpacing: 7,
-            children: profile.traits
-                .map(
-                  (String trait) => DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: profile.accentColor.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: profile.accentColor.withValues(alpha: 0.36),
-                      ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 6,
-                      ),
-                      child: Text(
-                        trait,
-                        style: TextStyle(
-                          color: colors.onSurface,
-                          fontSize: 11,
-                          height: 1,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+            child: Padding(
+              padding: const EdgeInsets.all(7),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    profile.summary,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: textColor,
+                      fontSize: 11,
+                      height: 1.14,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                )
-                .toList(),
+                  const SizedBox(height: 7),
+                  Wrap(
+                    spacing: 5,
+                    runSpacing: 5,
+                    children: profile.traits
+                        .map(
+                          (String trait) => DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: profile.accentColor.withValues(
+                                alpha: 0.18,
+                              ),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: profile.accentColor.withValues(
+                                  alpha: 0.5,
+                                ),
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 4,
+                              ),
+                              child: Text(
+                                trait,
+                                style: const TextStyle(
+                                  color: textColor,
+                                  fontSize: 9,
+                                  height: 1,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ],
+        ),
       ),
     );
   }

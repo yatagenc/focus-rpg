@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../models/focus_event.dart';
+import '../services/focus_event_sound_service.dart';
+import 'app_safe_layout.dart';
 
 class FocusEventDialog extends StatefulWidget {
   const FocusEventDialog({super.key, required this.challenge});
@@ -20,6 +22,7 @@ class _FocusEventDialogState extends State<FocusEventDialog> {
   int _sequenceIndex = 0;
   Offset _dragDelta = Offset.zero;
   bool _isHolding = false;
+  bool _hasFinished = false;
 
   int get _totalMilliseconds => widget.challenge.responseSeconds * 1000;
 
@@ -59,6 +62,12 @@ class _FocusEventDialogState extends State<FocusEventDialog> {
   }
 
   void _finish(FocusEventOutcome outcome) {
+    if (_hasFinished) {
+      return;
+    }
+    _hasFinished = true;
+    _timer?.cancel();
+    unawaited(FocusEventSoundService.instance.playForOutcome(outcome));
     Navigator.of(
       context,
     ).pop(FocusEventResult(challenge: widget.challenge, outcome: outcome));
@@ -125,34 +134,44 @@ class _FocusEventDialogState extends State<FocusEventDialog> {
   Widget build(BuildContext context) {
     final FocusEventChallenge challenge = widget.challenge;
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final double maxDialogHeight = MediaQuery.sizeOf(context).height * 0.72;
 
     return AlertDialog(
+      insetPadding: EdgeInsets.fromLTRB(
+        20,
+        AppSafeSpacing.top(context, 18),
+        20,
+        AppSafeSpacing.bottom(context, 18),
+      ),
+      contentPadding: const EdgeInsets.all(16),
       title: Row(
         children: [
           Icon(_eventTypeIcon(challenge.type), color: colors.primary),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(child: Text(challenge.title)),
         ],
       ),
       content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 340),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(challenge.description),
-            const SizedBox(height: 14),
-            _CountdownBar(
-              remainingSeconds: _remainingSeconds,
-              value: 1 - _timeProgress,
-            ),
-            const SizedBox(height: 18),
-            switch (challenge.type) {
-              FocusEventType.sequence => _buildSequence(context),
-              FocusEventType.holdRelease => _buildHoldRelease(context),
-              FocusEventType.dodge => _buildDodge(context),
-            },
-          ],
+        constraints: BoxConstraints(maxWidth: 360, maxHeight: maxDialogHeight),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(challenge.description),
+              const SizedBox(height: 10),
+              _CountdownBar(
+                remainingSeconds: _remainingSeconds,
+                value: 1 - _timeProgress,
+              ),
+              const SizedBox(height: 12),
+              switch (challenge.type) {
+                FocusEventType.sequence => _buildSequence(context),
+                FocusEventType.holdRelease => _buildHoldRelease(context),
+                FocusEventType.dodge => _buildDodge(context),
+              },
+            ],
+          ),
         ),
       ),
     );
@@ -160,13 +179,15 @@ class _FocusEventDialogState extends State<FocusEventDialog> {
 
   Widget _buildSequence(BuildContext context) {
     final List<FocusEventToken> sequence = widget.challenge.sequence;
+    final List<FocusEventToken> tokens = _uniqueTokens(sequence);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Wrap(
           alignment: WrapAlignment.center,
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 6,
+          runSpacing: 6,
           children: [
             for (int i = 0; i < sequence.length; i++)
               _SequenceStep(
@@ -176,20 +197,32 @@ class _FocusEventDialogState extends State<FocusEventDialog> {
               ),
           ],
         ),
-        const SizedBox(height: 18),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 2.4,
-          physics: const NeverScrollableScrollPhysics(),
+        const SizedBox(height: 12),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
           children: [
-            for (final FocusEventToken token in _uniqueTokens(sequence))
-              FilledButton.icon(
-                onPressed: () => _handleSequenceTap(token),
-                icon: Icon(_tokenIcon(token.iconKey), size: 22),
-                label: Text(token.label),
+            for (final FocusEventToken token in tokens)
+              SizedBox(
+                width: 144,
+                height: 48,
+                child: FilledButton.icon(
+                  onPressed: () => _handleSequenceTap(token),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  icon: Icon(_tokenIcon(token.iconKey), size: 20),
+                  label: Text(
+                    token.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ),
           ],
         ),
@@ -201,7 +234,8 @@ class _FocusEventDialogState extends State<FocusEventDialog> {
     final FocusEventChallenge challenge = widget.challenge;
     final List<Widget> buttons = List<Widget>.generate(
       challenge.holdButtonCount,
-      (int index) => Expanded(
+      (int index) => SizedBox(
+        width: challenge.holdButtonCount == 1 ? 220 : 148,
         child: GestureDetector(
           onTapDown: (_) {
             setState(() {
@@ -212,7 +246,7 @@ class _FocusEventDialogState extends State<FocusEventDialog> {
           onTapCancel: () => _finish(FocusEventOutcome.failed),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 100),
-            height: 56,
+            height: 52,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: _isHolding
@@ -222,6 +256,8 @@ class _FocusEventDialogState extends State<FocusEventDialog> {
             ),
             child: Text(
               challenge.holdButtonCount == 1 ? 'Hold' : 'Hold ${index + 1}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: _isHolding
                     ? Theme.of(context).colorScheme.onPrimary
@@ -238,14 +274,12 @@ class _FocusEventDialogState extends State<FocusEventDialog> {
       mainAxisSize: MainAxisSize.min,
       children: [
         _TimingBar(challenge: challenge, progress: _timeProgress),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            for (int i = 0; i < buttons.length; i++) ...[
-              if (i > 0) const SizedBox(width: 10),
-              buttons[i],
-            ],
-          ],
+        const SizedBox(height: 12),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: [for (final Widget button in buttons) button],
         ),
       ],
     );
@@ -270,14 +304,16 @@ class _FocusEventDialogState extends State<FocusEventDialog> {
           border: Border.all(color: colors.outlineVariant),
         ),
         child: SizedBox(
-          height: 180,
+          height: 150,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(_directionIcon(direction), size: 58, color: colors.primary),
-              const SizedBox(height: 12),
+              Icon(_directionIcon(direction), size: 50, color: colors.primary),
+              const SizedBox(height: 8),
               Text(
                 'Swipe ${direction.name.toUpperCase()}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
@@ -313,7 +349,7 @@ class _CountdownBar extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
           child: LinearProgressIndicator(value: value, minHeight: 8),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Text(
           '${remainingSeconds}s',
           style: Theme.of(
@@ -336,52 +372,59 @@ class _TimingBar extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     return SizedBox(
       height: 34,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final double width = constraints.maxWidth;
-          return Stack(
-            alignment: Alignment.centerLeft,
-            children: [
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colors.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: challenge.successStart * width,
-                width: (challenge.successEnd - challenge.successStart) * width,
-                top: 0,
-                bottom: 0,
-                child: ColoredBox(color: colors.primaryContainer),
-              ),
-              Positioned(
-                left: challenge.perfectStart * width,
-                width: math.max(
-                  4,
-                  (challenge.perfectEnd - challenge.perfectStart) * width,
-                ),
-                top: 0,
-                bottom: 0,
-                child: ColoredBox(color: colors.primary),
-              ),
-              Positioned(
-                left: (progress * width).clamp(0, width - 4),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ColoredBox(color: colors.surfaceContainerHighest),
+            _TimingBarRange(
+              start: challenge.successStart,
+              end: challenge.successEnd,
+              color: colors.primaryContainer,
+            ),
+            _TimingBarRange(
+              start: challenge.perfectStart,
+              end: challenge.perfectEnd,
+              color: colors.primary,
+            ),
+            Align(
+              alignment: Alignment((progress.clamp(0.0, 1.0) * 2) - 1, 0),
+              child: SizedBox(
                 width: 4,
-                top: 0,
-                bottom: 0,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colors.onSurface,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
+                height: double.infinity,
+                child: ColoredBox(color: colors.onSurface),
               ),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TimingBarRange extends StatelessWidget {
+  const _TimingBarRange({
+    required this.start,
+    required this.end,
+    required this.color,
+  });
+
+  final double start;
+  final double end;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final double widthFactor = math.max(0.01, end - start).clamp(0.0, 1.0);
+    final double midpoint = ((start + end) / 2).clamp(0.0, 1.0);
+
+    return Align(
+      alignment: Alignment((midpoint * 2) - 1, 0),
+      child: FractionallySizedBox(
+        widthFactor: widthFactor,
+        heightFactor: 1,
+        child: ColoredBox(color: color),
       ),
     );
   }

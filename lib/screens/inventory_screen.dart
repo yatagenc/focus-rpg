@@ -13,6 +13,7 @@ import '../models/potion_definition.dart';
 import '../models/potion_rarity.dart';
 import '../services/inventory_service.dart';
 import '../services/save_service.dart';
+import '../widgets/app_safe_layout.dart';
 import '../widgets/layered_avatar.dart';
 import '../widgets/potion_card.dart';
 
@@ -40,50 +41,55 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Inventory')),
-      body: profileId == null
-          ? const Center(child: Text('Profile not found.'))
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                  child: _InventoryModeSelector(
-                    selectedMode: _mode,
-                    onChanged: (_InventoryMode mode) {
-                      setState(() {
-                        _mode = mode;
-                      });
-                    },
-                  ),
-                ),
-                if (_mode == _InventoryMode.potions)
+      body: AppSafeLayout(
+        horizontal: 0,
+        top: 4,
+        bottom: 8,
+        child: profileId == null
+            ? const Center(child: Text('Profile not found.'))
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                    child: _InventoryFilters(
-                      selectedRarity: _rarityFilter,
-                      onChanged: (PotionRarity? rarity) {
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: _InventoryModeSelector(
+                      selectedMode: _mode,
+                      onChanged: (_InventoryMode mode) {
                         setState(() {
-                          _rarityFilter = rarity;
+                          _mode = mode;
                         });
                       },
                     ),
                   ),
-                Expanded(
-                  child: switch (_mode) {
-                    _InventoryMode.potions => _PotionList(
-                      profileId: profileId,
-                      rarityFilter: _rarityFilter,
+                  if (_mode == _InventoryMode.potions)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                      child: _InventoryFilters(
+                        selectedRarity: _rarityFilter,
+                        onChanged: (PotionRarity? rarity) {
+                          setState(() {
+                            _rarityFilter = rarity;
+                          });
+                        },
+                      ),
                     ),
-                    _InventoryMode.threads => _ThreadInventory(
-                      profileId: profileId,
-                    ),
-                    _InventoryMode.frames => _FrameInventory(
-                      profileId: profileId,
-                    ),
-                  },
-                ),
-              ],
-            ),
+                  Expanded(
+                    child: switch (_mode) {
+                      _InventoryMode.potions => _PotionList(
+                        profileId: profileId,
+                        rarityFilter: _rarityFilter,
+                      ),
+                      _InventoryMode.threads => _ThreadInventory(
+                        profileId: profileId,
+                      ),
+                      _InventoryMode.frames => _FrameInventory(
+                        profileId: profileId,
+                      ),
+                    },
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }
@@ -264,11 +270,6 @@ class _ThreadInventoryState extends State<_ThreadInventory> {
                     icon: Icon(Icons.checkroom),
                     label: Text('Torso'),
                   ),
-                  ButtonSegment<CosmeticType>(
-                    value: CosmeticType.weapon,
-                    icon: Icon(Icons.gavel),
-                    label: Text('Weapon'),
-                  ),
                 ],
                 selected: <CosmeticType>{_selectedType},
                 onSelectionChanged: (Set<CosmeticType> value) {
@@ -443,8 +444,7 @@ class _ThreadInventoryData {
         .where(
           (CosmeticDefinition cosmetic) =>
               cosmetic.type == CosmeticType.hat ||
-              cosmetic.type == CosmeticType.torso ||
-              cosmetic.type == CosmeticType.weapon,
+              cosmetic.type == CosmeticType.torso,
         )
         .toList(growable: false);
   }
@@ -811,6 +811,7 @@ class _PotionListState extends State<_PotionList> {
               definition: definition,
               quantity: quantities[definition.id] ?? 0,
               expanded: _expandedPotionId == definition.id,
+              showQuantityInTitle: true,
               onTap: () {
                 setState(() {
                   _expandedPotionId = _expandedPotionId == definition.id

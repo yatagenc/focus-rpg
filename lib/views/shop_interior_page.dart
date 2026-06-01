@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/app_safe_layout.dart';
+
 class ShopInteriorPage extends StatelessWidget {
   const ShopInteriorPage({
     super.key,
@@ -34,40 +36,40 @@ class ShopInteriorPage extends StatelessWidget {
               ),
             ),
           ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _BackButton(onPressed: () => Navigator.pop(context)),
-                      const Spacer(),
-                      _ShopTitle(title: title, subtitle: subtitle),
-                    ],
-                  ),
-                  const Spacer(),
-                  Center(
-                    child: SizedBox(
-                      width: 390,
-                      height: 52,
-                      child: FilledButton.icon(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.door_back_door),
-                        label: const Text('Exit'),
-                        style: FilledButton.styleFrom(
-                          textStyle: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
+          AppSafeLayout(
+            horizontal: 16,
+            top: 12,
+            bottom: 22,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _BackButton(onPressed: () => Navigator.pop(context)),
+                    const Spacer(),
+                    _ShopTitle(title: title, subtitle: subtitle),
+                  ],
+                ),
+                const Spacer(),
+                Center(
+                  child: SizedBox(
+                    width: 390,
+                    height: 52,
+                    child: FilledButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.door_back_door),
+                      label: const Text('Exit'),
+                      style: FilledButton.styleFrom(
+                        textStyle: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],

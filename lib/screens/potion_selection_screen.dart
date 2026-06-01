@@ -6,6 +6,7 @@ import '../models/inventory_potion.dart';
 import '../models/potion_definition.dart';
 import '../services/inventory_service.dart';
 import '../views/focus_session_page.dart';
+import '../widgets/app_safe_layout.dart';
 import '../widgets/potion_card.dart';
 import '../widgets/potion_detail_sheet.dart';
 import '../widgets/selected_potion_loadout.dart';
@@ -139,11 +140,14 @@ class _PotionSelectionScreenState extends State<PotionSelectionScreen> {
                     )
                     .toList();
 
-                return SafeArea(
+                return AppSafeLayout(
+                  horizontal: 0,
+                  top: 6,
+                  bottom: 8,
                   child: Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                         child: SelectedPotionLoadout(
                           selectedPotionIds: _selectedPotionIds,
                           onRemove: _removePotion,
@@ -153,7 +157,11 @@ class _PotionSelectionScreenState extends State<PotionSelectionScreen> {
                         child: ownedPotions.isEmpty
                             ? const Center(child: Text('No potions available.'))
                             : ListView.separated(
-                                padding: const EdgeInsets.all(16),
+                                padding: AppSafeSpacing.listPadding(
+                                  context,
+                                  top: 12,
+                                  bottom: 14,
+                                ),
                                 itemCount: ownedPotions.length,
                                 separatorBuilder: (_, _) =>
                                     const SizedBox(height: 12),
@@ -189,7 +197,7 @@ class _PotionSelectionScreenState extends State<PotionSelectionScreen> {
                               ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                         child: SizedBox(
                           width: double.infinity,
                           height: 54,

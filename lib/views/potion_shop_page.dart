@@ -7,6 +7,7 @@ import '../models/potion_definition.dart';
 import '../services/inventory_service.dart';
 import '../services/save_service.dart';
 import '../services/shop_sound_service.dart';
+import '../widgets/app_safe_layout.dart';
 import '../widgets/potion_card.dart';
 import '../widgets/potion_detail_sheet.dart';
 
@@ -177,7 +178,10 @@ class _PotionShopPageState extends State<PotionShopPage> {
               ),
             ),
           ),
-          SafeArea(
+          AppSafeLayout(
+            horizontal: 0,
+            top: 8,
+            bottom: 12,
             child: profileId == null
                 ? const Center(child: Text('Profile not found.'))
                 : FutureBuilder<List<Object?>>(
