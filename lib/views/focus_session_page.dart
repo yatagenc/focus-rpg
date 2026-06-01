@@ -9,9 +9,11 @@ import '../models/player_save.dart';
 import '../models/potion_definition.dart';
 import '../models/potion_effect_type.dart';
 import '../services/focus_event_service.dart';
+import '../services/focus_event_sound_service.dart';
 import '../services/ambient_audio_service.dart';
 import '../services/inventory_service.dart';
 import '../services/save_service.dart';
+import '../widgets/app_safe_layout.dart';
 import '../widgets/focus_event_dialog.dart';
 
 class FocusSessionArguments {
@@ -34,6 +36,7 @@ class FocusSessionPage extends StatefulWidget {
 class _FocusSessionPageState extends State<FocusSessionPage> {
   static const int _breakUnlockSeconds = 30 * 60;
   static const int _baseBreakDurationSeconds = 10 * 60;
+  static const int _baseFocusTargetSeconds = 40 * 60;
 
   final SaveService _saveService = SaveService();
   final InventoryService _inventoryService = InventoryService.instance;
@@ -52,6 +55,8 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
   int _elapsedMilliseconds = 0;
   int _totalSessionMilliseconds = 0;
   int _breakRemainingSeconds = _baseBreakDurationSeconds;
+  int _debugTimeMultiplier = 1;
+  int? _lastTreeDebugElapsedSecond;
   bool _hasUsedBreak = false;
   bool _isSaving = false;
   bool _isStarting = false;
@@ -64,9 +69,13 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
   int _failedFocusEvents = 0;
   int? _nextFocusEventAtMilliseconds;
   bool _isFocusEventActive = false;
+  bool _didPrecacheFocusTreeAssets = false;
   String? _selectedAmbientSoundId;
+  bool _isAmbientShuffleEnabled = false;
   final List<FocusEventResult> _eventResults = <FocusEventResult>[];
-  String? _eventLog;
+  Timer? _sessionToastTimer;
+  String? _sessionToastText;
+  bool _sessionToastVisible = false;
 
   bool get _isRunning => _startedAt != null;
   bool get _isBreakActive => _breakStartedAt != null;
@@ -75,10 +84,16 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       !_isBreakActive &&
       !_hasUsedBreak &&
       _elapsedMilliseconds >= _breakUnlockSeconds * 1000;
+  int get _totalFocusSeconds =>
+      _baseFocusTargetSeconds + (_sessionEffects.rewardBonusMinutes * 60);
+  double get _focusProgress =>
+      (_elapsedMilliseconds / (_totalFocusSeconds * 1000)).clamp(0.0, 1.0);
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _precacheFocusTreeAssets();
+    unawaited(FocusEventSoundService.instance.initialize());
     if (_profileId != null) {
       return;
     }
@@ -93,9 +108,20 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
     _recalculatePotionEffects();
   }
 
+  void _precacheFocusTreeAssets() {
+    if (_didPrecacheFocusTreeAssets) {
+      return;
+    }
+    _didPrecacheFocusTreeAssets = true;
+    for (final String assetPath in _AncientWorldTreeBackground.treeStages) {
+      precacheImage(AssetImage(assetPath), context);
+    }
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
+    _sessionToastTimer?.cancel();
     unawaited(_ambientAudioService.stop());
     super.dispose();
   }
@@ -163,6 +189,8 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       _totalSessionMilliseconds = 0;
       _breakStartedAt = null;
       _breakRemainingSeconds = _sessionEffects.breakDurationSeconds;
+      _debugTimeMultiplier = 1;
+      _lastTreeDebugElapsedSecond = null;
       _hasUsedBreak = false;
       _eventRewardBonusMinutes = 0;
       _eventBonusXp = 0;
@@ -174,7 +202,9 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
           .nextEventDeadlineMilliseconds(baseMilliseconds: 0);
       _isFocusEventActive = false;
       _streakBlockedByEvent = false;
-      _eventLog = null;
+      _sessionToastTimer?.cancel();
+      _sessionToastText = null;
+      _sessionToastVisible = false;
       _isStarting = false;
     });
 
@@ -188,13 +218,18 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       final DateTime? breakStartedAt = _breakStartedAt;
       final DateTime? focusResumedAt = _focusResumedAt;
 
+      if (!mounted) {
+        return;
+      }
+
       setState(() {
         _totalSessionMilliseconds = now.difference(startedAt).inMilliseconds;
 
         if (breakStartedAt == null && focusResumedAt != null) {
           _elapsedMilliseconds =
               _focusAccumulatedMilliseconds +
-              now.difference(focusResumedAt).inMilliseconds;
+              now.difference(focusResumedAt).inMilliseconds *
+                  _debugTimeMultiplier;
         } else {
           _elapsedMilliseconds = _focusAccumulatedMilliseconds;
         }
@@ -213,7 +248,23 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
         }
       });
 
+      _logTreeDebug();
       _maybeLaunchScheduledFocusEvent();
+    });
+  }
+
+  void _setDebugTimeMultiplier(int multiplier) {
+    if (_debugTimeMultiplier == multiplier) {
+      return;
+    }
+
+    final DateTime now = DateTime.now();
+    setState(() {
+      if (_isRunning && !_isBreakActive) {
+        _focusAccumulatedMilliseconds = _elapsedMilliseconds;
+        _focusResumedAt = now;
+      }
+      _debugTimeMultiplier = multiplier;
     });
   }
 
@@ -265,9 +316,22 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
   }
 
   Future<void> _openAmbientSoundMenu() async {
-    String? draftSoundId = _selectedAmbientSoundId;
+    bool draftShuffleEnabled = _isAmbientShuffleEnabled;
+    String? draftSoundId = draftShuffleEnabled ? null : _selectedAmbientSoundId;
+    bool draftIsPaused = _ambientAudioService.isPaused;
+    bool draftCanPlayPrevious = _ambientAudioService.canPlayPrevious;
 
-    final String? selectedSoundId = await showGeneralDialog<String>(
+    void syncAmbientState() {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isAmbientShuffleEnabled = _ambientAudioService.isShuffleEnabled;
+        _selectedAmbientSoundId = _ambientAudioService.activeSoundId;
+      });
+    }
+
+    await showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Close ambient sound menu',
@@ -289,7 +353,10 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
           480.0,
         );
 
-        return SafeArea(
+        return AppSafeLayout(
+          horizontal: 0,
+          top: 8,
+          bottom: 8,
           child: Align(
             alignment: Alignment.centerRight,
             child: SizedBox(
@@ -315,6 +382,103 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                                 ?.copyWith(fontWeight: FontWeight.w900),
                           ),
                           const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _ShuffleAmbientButton(
+                                  isEnabled: draftShuffleEnabled,
+                                  onPressed: () async {
+                                    final bool nextShuffleEnabled =
+                                        !draftShuffleEnabled;
+                                    if (nextShuffleEnabled) {
+                                      await _ambientAudioService
+                                          .enableShuffleAfterCurrent();
+                                    } else {
+                                      await _ambientAudioService
+                                          .setShuffleEnabled(false);
+                                    }
+                                    syncAmbientState();
+                                    setSheetState(() {
+                                      draftShuffleEnabled =
+                                          _ambientAudioService.isShuffleEnabled;
+                                      if (draftShuffleEnabled) {
+                                        draftSoundId = null;
+                                      } else {
+                                        draftSoundId =
+                                            _ambientAudioService.activeSoundId;
+                                      }
+                                      draftIsPaused =
+                                          _ambientAudioService.isPaused;
+                                      draftCanPlayPrevious =
+                                          _ambientAudioService.canPlayPrevious;
+                                    });
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              _AmbientTransportButton(
+                                icon: Icons.chevron_left,
+                                onPressed: draftCanPlayPrevious
+                                    ? () async {
+                                        await _ambientAudioService
+                                            .playPrevious();
+                                        syncAmbientState();
+                                        setSheetState(() {
+                                          draftShuffleEnabled =
+                                              _ambientAudioService
+                                                  .isShuffleEnabled;
+                                          draftSoundId = draftShuffleEnabled
+                                              ? null
+                                              : _ambientAudioService
+                                                    .activeSoundId;
+                                          draftIsPaused =
+                                              _ambientAudioService.isPaused;
+                                          draftCanPlayPrevious =
+                                              _ambientAudioService
+                                                  .canPlayPrevious;
+                                        });
+                                      }
+                                    : null,
+                              ),
+                              const SizedBox(width: 6),
+                              _AmbientTransportButton(
+                                icon: draftIsPaused
+                                    ? Icons.play_arrow
+                                    : Icons.pause,
+                                onPressed:
+                                    _ambientAudioService.activeSoundId == null
+                                    ? null
+                                    : () async {
+                                        final bool isPaused =
+                                            await _ambientAudioService
+                                                .togglePause();
+                                        setSheetState(() {
+                                          draftIsPaused = isPaused;
+                                        });
+                                      },
+                              ),
+                              const SizedBox(width: 6),
+                              _AmbientTransportButton(
+                                icon: Icons.chevron_right,
+                                onPressed: () async {
+                                  await _ambientAudioService.skipToNext();
+                                  syncAmbientState();
+                                  setSheetState(() {
+                                    draftShuffleEnabled =
+                                        _ambientAudioService.isShuffleEnabled;
+                                    draftSoundId = draftShuffleEnabled
+                                        ? null
+                                        : _ambientAudioService.activeSoundId;
+                                    draftIsPaused =
+                                        _ambientAudioService.isPaused;
+                                    draftCanPlayPrevious =
+                                        _ambientAudioService.canPlayPrevious;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
                           Expanded(
                             child: GridView.builder(
                               itemCount: AmbientAudioService.sounds.length,
@@ -330,9 +494,34 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                                 final bool isSelected =
                                     draftSoundId == sound.id;
                                 return OutlinedButton.icon(
-                                  onPressed: () {
+                                  onPressed: () async {
+                                    try {
+                                      await _ambientAudioService.play(sound);
+                                    } catch (error) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Ambient sound could not be played.',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                      return;
+                                    }
+                                    syncAmbientState();
                                     setSheetState(() {
-                                      draftSoundId = sound.id;
+                                      draftShuffleEnabled =
+                                          _ambientAudioService.isShuffleEnabled;
+                                      draftSoundId = draftShuffleEnabled
+                                          ? null
+                                          : _ambientAudioService.activeSoundId;
+                                      draftIsPaused =
+                                          _ambientAudioService.isPaused;
+                                      draftCanPlayPrevious =
+                                          _ambientAudioService.canPlayPrevious;
                                     });
                                   },
                                   icon: Icon(
@@ -360,29 +549,6 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                               },
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: () =>
-                                      Navigator.of(context).pop(null),
-                                  child: const Text('Cancel'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: FilledButton(
-                                  onPressed: draftSoundId == null
-                                      ? null
-                                      : () => Navigator.of(
-                                          context,
-                                        ).pop(draftSoundId),
-                                  child: const Text('OK'),
-                                ),
-                              ),
-                            ],
-                          ),
                         ],
                       ),
                     );
@@ -394,32 +560,6 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
         );
       },
     );
-
-    if (selectedSoundId == null) {
-      return;
-    }
-
-    final AmbientSound sound = AmbientAudioService.sounds.firstWhere(
-      (AmbientSound sound) => sound.id == selectedSoundId,
-    );
-    try {
-      await _ambientAudioService.play(sound);
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      _showSnack('Ambient sound could not be played.');
-      return;
-    }
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _selectedAmbientSoundId = sound.id;
-    });
-    _showSnack('${sound.label} selected.');
   }
 
   void _recalculatePotionEffects() {
@@ -452,9 +592,11 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
             .toList();
 
         if (definitions.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(child: Text('No potions available.')),
+          return AppSafeLayout(
+            horizontal: 24,
+            top: 8,
+            bottom: 18,
+            child: const Center(child: Text('No potions available.')),
           );
         }
 
@@ -463,9 +605,12 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
             potion.potionId: potion.quantity,
         };
 
-        return SafeArea(
+        return AppSafeLayout(
+          horizontal: 0,
+          top: 4,
+          bottom: 8,
           child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            padding: AppSafeSpacing.listPadding(context, top: 8, bottom: 18),
             itemCount: definitions.length,
             separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, index) {
@@ -556,6 +701,10 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
     final FocusEventChallenge challenge = _eventService.createChallenge(
       playerClass: _playerClass,
     );
+    // ignore: avoid_print
+    print('EVENT DIALOG OPEN');
+    unawaited(FocusEventSoundService.instance.playIncomingEvent());
+
     final FocusEventResult result =
         await showDialog<FocusEventResult>(
           context: context,
@@ -573,17 +722,19 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       return;
     }
 
+    late final String toastMessage;
     setState(() {
-      _resolveFocusEvent(result);
+      toastMessage = _resolveFocusEvent(result);
       _nextFocusEventAtMilliseconds = _eventService
           .nextEventDeadlineMilliseconds(
             baseMilliseconds: _elapsedMilliseconds,
           );
       _isFocusEventActive = false;
     });
+    _showSessionToast(toastMessage);
   }
 
-  void _resolveFocusEvent(FocusEventResult result) {
+  String _resolveFocusEvent(FocusEventResult result) {
     _eventResults.add(result);
 
     if (result.isSuccess) {
@@ -594,20 +745,74 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
       _completedFocusEvents += 1;
       _eventBonusGold += earnedGold;
       _eventBonusXp += earnedXp;
-      _eventLog = result.outcome == FocusEventOutcome.perfect
+      return result.outcome == FocusEventOutcome.perfect
           ? 'Perfect timing! +$earnedGold Gold'
           : 'Success! +$earnedGold Gold';
-      return;
     }
 
     _failedFocusEvents += 1;
-    _eventLog = 'The moment passes...';
+    return 'Event Failed';
+  }
+
+  void _showSessionToast(String message) {
+    _sessionToastTimer?.cancel();
+    setState(() {
+      _sessionToastText = message;
+      _sessionToastVisible = true;
+    });
+
+    _sessionToastTimer = Timer(const Duration(seconds: 5), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _sessionToastVisible = false;
+      });
+
+      Future<void>.delayed(const Duration(milliseconds: 500), () {
+        if (!mounted) {
+          return;
+        }
+        if (!_sessionToastVisible && _sessionToastText == message) {
+          setState(() {
+            _sessionToastText = null;
+          });
+        }
+      });
+    });
   }
 
   void _showSnack(String message) {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _logTreeDebug() {
+    final int elapsedFocusSeconds = _elapsedMilliseconds ~/ 1000;
+    if (_lastTreeDebugElapsedSecond == elapsedFocusSeconds) {
+      return;
+    }
+    _lastTreeDebugElapsedSecond = elapsedFocusSeconds;
+
+    final double progress = _focusProgress;
+    final int stageIndex = _AncientWorldTreeBackground.stageIndexForProgress(
+      progress,
+    );
+    final String assetPath = _AncientWorldTreeBackground.treeStages[stageIndex];
+    final List<double> stageOpacities =
+        _AncientWorldTreeBackground.stageOpacitiesForProgress(progress);
+
+    // ignore: avoid_print
+    print(
+      'TREE_DEBUG: '
+      'elapsedFocusSeconds=$elapsedFocusSeconds '
+      'totalFocusSeconds=$_totalFocusSeconds '
+      'progress=${progress.toStringAsFixed(3)} '
+      'stageIndex=$stageIndex '
+      'assetPath=$assetPath '
+      'stageOpacities=$stageOpacities',
+    );
   }
 
   int? _secondsUntilNextFocusEvent() {
@@ -706,36 +911,37 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
         (_elapsedMilliseconds / (_breakUnlockSeconds * 1000))
             .clamp(0, 1)
             .toDouble();
+    final double sessionProgress = _focusProgress;
+    // ignore: avoid_print
+    print('FocusSession build');
+    // ignore: avoid_print
+    print('progress: $sessionProgress');
 
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        leading: IconButton(
-          tooltip: 'Back',
-          onPressed: _isSaving || _isStarting ? null : _cancelSession,
-          icon: const Icon(Icons.arrow_back),
-        ),
-        title: const Text('Focus Session'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(
-              child: _TotalSessionPill(totalTimerText: totalTimerText),
-            ),
-          ),
-        ],
-      ),
-      body: SafeArea(
+      body: AppSafeLayout(
+        horizontal: 0,
+        top: 10,
+        bottom: 8,
         child: Stack(
           children: [
+            Positioned.fill(
+              child: _AncientWorldTreeBackground(progress: sessionProgress),
+            ),
             Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 390),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 6, 24, 16),
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      _FocusSessionHeader(
+                        totalTimerText: totalTimerText,
+                        onBack: _isSaving || _isStarting
+                            ? null
+                            : _cancelSession,
+                      ),
+                      const SizedBox(height: 12),
                       _FocusEventStatusPill(
                         secondsUntilNext: _secondsUntilNextFocusEvent(),
                         isActive: _isFocusEventActive,
@@ -776,12 +982,12 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                           ),
                         ),
                       ],
-                      const Spacer(),
+                      const Spacer(flex: 5),
                       Text(
                         timerText,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
-                          fontSize: 56,
+                          fontSize: 46,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -799,15 +1005,20 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                       ],
-                      const Spacer(),
-                      if (_eventLog != null) ...[
-                        Text(
-                          _eventLog!,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodySmall,
+                      const Spacer(flex: 3),
+                      if (_sessionToastText != null) ...[
+                        _RewardToast(
+                          message: _sessionToastText!,
+                          isVisible: _sessionToastVisible,
                         ),
                         const SizedBox(height: 12),
                       ],
+                      _DebugTimeMultiplierControl(
+                        multiplier: _debugTimeMultiplier,
+                        isEnabled: !_isSaving && !_isStarting,
+                        onChanged: _setDebugTimeMultiplier,
+                      ),
+                      const SizedBox(height: 10),
                       SizedBox(
                         height: 54,
                         child: _primarySessionButton(breakProgress),
@@ -932,6 +1143,70 @@ class _FocusSessionPageState extends State<FocusSessionPage> {
     final int minutes = totalSeconds ~/ 60;
     final int seconds = totalSeconds % 60;
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+}
+
+class _ShuffleAmbientButton extends StatelessWidget {
+  const _ShuffleAmbientButton({
+    required this.isEnabled,
+    required this.onPressed,
+  });
+
+  final bool isEnabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+
+    return SizedBox(
+      height: 38,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(isEnabled ? Icons.shuffle_on : Icons.shuffle, size: 18),
+        label: Text(isEnabled ? 'Shuffle ON' : 'Shuffle OFF'),
+        style: OutlinedButton.styleFrom(
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+          backgroundColor: isEnabled
+              ? colors.primary.withValues(alpha: 0.16)
+              : null,
+          side: BorderSide(
+            color: isEnabled ? colors.primary : colors.outlineVariant,
+            width: isEnabled ? 2 : 1,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AmbientTransportButton extends StatelessWidget {
+  const _AmbientTransportButton({required this.icon, required this.onPressed});
+
+  final IconData icon;
+  final Future<void> Function()? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool isEnabled = onPressed != null;
+
+    return SizedBox.square(
+      dimension: 38,
+      child: OutlinedButton(
+        onPressed: isEnabled ? () => unawaited(onPressed!()) : null,
+        style: OutlinedButton.styleFrom(
+          padding: EdgeInsets.zero,
+          side: BorderSide(
+            color: isEnabled ? colors.primary : colors.outlineVariant,
+          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        child: Icon(icon, size: 20),
+      ),
+    );
   }
 }
 
@@ -1136,6 +1411,74 @@ class PotionSessionEffects {
   }
 }
 
+class _AncientWorldTreeBackground extends StatelessWidget {
+  static const List<String> treeStages = <String>[
+    'assets/focus_tree/tree_stage_1.png',
+    'assets/focus_tree/tree_stage_2.png',
+    'assets/focus_tree/tree_stage_3.png',
+    'assets/focus_tree/tree_stage_4.png',
+  ];
+
+  final double progress;
+
+  const _AncientWorldTreeBackground({required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    // ignore: avoid_print
+    print('background mounted');
+    final List<double> stageOpacities = stageOpacitiesForProgress(progress);
+
+    return IgnorePointer(
+      ignoring: true,
+      child: RepaintBoundary(
+        child: SizedBox.expand(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              for (int index = 0; index < treeStages.length; index += 1)
+                Opacity(
+                  opacity: stageOpacities[index],
+                  child: Image.asset(
+                    treeStages[index],
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
+                    gaplessPlayback: true,
+                    filterQuality: FilterQuality.low,
+                  ),
+                ),
+              const ColoredBox(color: Color(0x66000000)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static int stageIndexForProgress(double rawProgress) {
+    final double progress = rawProgress.clamp(0.0, 1.0);
+    if (progress < 0.25) {
+      return 0;
+    }
+    if (progress < 0.50) {
+      return 1;
+    }
+    if (progress < 0.75) {
+      return 2;
+    }
+    return 3;
+  }
+
+  static List<double> stageOpacitiesForProgress(double progress) {
+    return switch (stageIndexForProgress(progress)) {
+      0 => const <double>[1, 0, 0, 0],
+      1 => const <double>[0, 1, 0, 0],
+      2 => const <double>[0, 0, 1, 0],
+      _ => const <double>[0, 0, 0, 1],
+    };
+  }
+}
+
 class _ActivePotionEffects extends StatelessWidget {
   const _ActivePotionEffects({required this.effects});
 
@@ -1163,6 +1506,43 @@ class _ActivePotionEffects extends StatelessWidget {
             for (final String label in effects.labels.take(3))
               Text('• $label', style: Theme.of(context).textTheme.bodySmall),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RewardToast extends StatelessWidget {
+  const _RewardToast({required this.message, required this.isVisible});
+
+  final String message;
+  final bool isVisible;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        opacity: isVisible ? 1 : 0,
+        duration: Duration(milliseconds: isVisible ? 300 : 500),
+        curve: Curves.easeOutCubic,
+        child: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: colors.brightness == Brightness.dark
+                ? const Color(0xFFFFF3C4)
+                : Colors.white,
+            fontWeight: FontWeight.w800,
+            shadows: const <Shadow>[
+              Shadow(
+                color: Colors.black87,
+                offset: Offset(0, 1),
+                blurRadius: 6,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1304,6 +1684,146 @@ class _BreakProgressButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DebugTimeMultiplierControl extends StatelessWidget {
+  const _DebugTimeMultiplierControl({
+    required this.multiplier,
+    required this.isEnabled,
+    required this.onChanged,
+  });
+
+  final int multiplier;
+  final bool isEnabled;
+  final ValueChanged<int> onChanged;
+
+  static const List<int> _multipliers = <int>[1, 5, 15];
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+
+    return SizedBox(
+      height: 38,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surface.withValues(alpha: 0.76),
+          border: Border.all(color: colors.outlineVariant),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(3),
+          child: Row(
+            children: [
+              for (final int value in _multipliers)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: _DebugTimeMultiplierButton(
+                      value: value,
+                      isSelected: multiplier == value,
+                      isEnabled: isEnabled,
+                      onPressed: () => onChanged(value),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DebugTimeMultiplierButton extends StatelessWidget {
+  const _DebugTimeMultiplierButton({
+    required this.value,
+    required this.isSelected,
+    required this.isEnabled,
+    required this.onPressed,
+  });
+
+  final int value;
+  final bool isSelected;
+  final bool isEnabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final Color foregroundColor = isSelected
+        ? colors.onPrimary
+        : colors.onSurfaceVariant;
+
+    return TextButton(
+      onPressed: isEnabled ? onPressed : null,
+      style: TextButton.styleFrom(
+        foregroundColor: foregroundColor,
+        backgroundColor: isSelected ? colors.primary : Colors.transparent,
+        disabledForegroundColor: colors.onSurface.withValues(alpha: 0.38),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+        padding: EdgeInsets.zero,
+      ),
+      child: Text('${value}x'),
+    );
+  }
+}
+
+class _FocusSessionHeader extends StatelessWidget {
+  const _FocusSessionHeader({
+    required this.totalTimerText,
+    required this.onBack,
+  });
+
+  final String totalTimerText;
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+
+    return SizedBox(
+      height: 48,
+      child: Row(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.surface.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: colors.primary.withValues(alpha: 0.6)),
+            ),
+            child: IconButton(
+              tooltip: 'Back',
+              onPressed: onBack,
+              icon: const Icon(Icons.arrow_back),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Focus Session',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: const Color(0xFFFFF2D4),
+                shadows: const <Shadow>[
+                  Shadow(
+                    color: Colors.black87,
+                    offset: Offset(0, 1),
+                    blurRadius: 5,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          _TotalSessionPill(totalTimerText: totalTimerText),
+        ],
       ),
     );
   }

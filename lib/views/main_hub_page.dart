@@ -3,8 +3,11 @@ import 'package:flutter/material.dart';
 import '../core/routes.dart';
 import '../core/progression.dart';
 import '../data/models/equipped_cosmetic.dart';
+import '../data/models/app_settings.dart';
 import '../models/player_save.dart';
 import '../services/save_service.dart';
+import '../services/settings_service.dart';
+import '../widgets/app_safe_layout.dart';
 import '../services/shop_sound_service.dart';
 import '../widgets/layered_avatar.dart';
 
@@ -93,7 +96,10 @@ class _MainHubPageState extends State<MainHubPage> {
 
           final PlayerSave save = data.save;
           return _TownBackground(
-            child: SafeArea(
+            child: AppSafeLayout(
+              horizontal: 0,
+              top: 10,
+              bottom: 12,
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final Size size = constraints.biggest;
@@ -138,10 +144,9 @@ class _MainHubPageState extends State<MainHubPage> {
                                   ],
                                 ),
                                 const Spacer(),
-                                _StreakPill(days: save.streakDays),
-                                const SizedBox(width: 10),
                                 _ProfileSummary(
                                   save: save,
+                                  streakDays: save.streakDays,
                                   equippedCosmetics: data.equippedCosmetics,
                                   onInventoryPressed: () {
                                     Navigator.pushNamed(
@@ -246,31 +251,47 @@ class _MainHubPageState extends State<MainHubPage> {
 class _TownBackground extends StatelessWidget {
   const _TownBackground({required this.child});
 
+  static const String _dayBackgroundAsset = 'assets/images/town1.png';
+  static const String _nightBackgroundAsset = 'assets/images/town_night.png';
+
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.asset('assets/images/town1.png', fit: BoxFit.cover),
-        const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0x66000000),
-                Color(0x00000000),
-                Color(0x33000000),
-                Color(0x99000000),
-              ],
-              stops: [0, 0.28, 0.66, 1],
+    return ValueListenableBuilder<AppSettings>(
+      valueListenable: SettingsService.instance.settingsNotifier,
+      builder: (context, settings, _) {
+        final String backgroundAsset = settings.darkMode
+            ? _nightBackgroundAsset
+            : _dayBackgroundAsset;
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.asset(
+              backgroundAsset,
+              key: ValueKey<String>(backgroundAsset),
+              fit: BoxFit.cover,
             ),
-          ),
-        ),
-        child,
-      ],
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0x66000000),
+                    Color(0x00000000),
+                    Color(0x33000000),
+                    Color(0x99000000),
+                  ],
+                  stops: [0, 0.28, 0.66, 1],
+                ),
+              ),
+            ),
+            child,
+          ],
+        );
+      },
     );
   }
 }
@@ -333,12 +354,14 @@ class _ShopHotspot extends StatelessWidget {
 class _ProfileSummary extends StatelessWidget {
   const _ProfileSummary({
     required this.save,
+    required this.streakDays,
     required this.equippedCosmetics,
     required this.onInventoryPressed,
     required this.onProfilePressed,
   });
 
   final PlayerSave save;
+  final int streakDays;
   final List<EquippedCosmetic> equippedCosmetics;
   final VoidCallback onInventoryPressed;
   final VoidCallback onProfilePressed;
@@ -353,20 +376,28 @@ class _ProfileSummary extends StatelessWidget {
     final int? requiredXp = progress.requiredXpForNextLevel;
 
     return SizedBox(
-      width: 132,
+      width: 178,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Align(
             alignment: Alignment.centerRight,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(999),
-              onTap: onProfilePressed,
-              child: LayeredAvatar(
-                playerClass: save.playerClass,
-                equippedCosmetics: equippedCosmetics,
-                size: 58,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _StreakPill(days: streakDays),
+                const SizedBox(width: 8),
+                InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: onProfilePressed,
+                  child: LayeredAvatar(
+                    playerClass: save.playerClass,
+                    equippedCosmetics: equippedCosmetics,
+                    size: 58,
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 10),
@@ -436,48 +467,56 @@ class _StreakPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
     final bool active = days > 0;
-    final Color flameColor = _flameColor(colors);
-    final Color backgroundColor = active
-        ? flameColor.withValues(alpha: 0.14)
-        : colors.surfaceContainerHighest;
+    final Color flameColor = _flameColor();
+    final Color iconColor = active ? flameColor : const Color(0xFFD7D2C8);
     final Color borderColor = active
-        ? flameColor.withValues(alpha: 0.56)
-        : colors.outlineVariant;
-    final Color textColor = active ? colors.onSurface : colors.onSurfaceVariant;
+        ? flameColor.withValues(alpha: 0.68)
+        : const Color(0xFFE7DCC6).withValues(alpha: 0.5);
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: backgroundColor,
+        color: const Color(0xE51A1712),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: borderColor),
-        boxShadow: active && days >= 30
-            ? <BoxShadow>[
-                BoxShadow(
-                  color: flameColor.withValues(alpha: 0.22),
-                  blurRadius: 12,
-                  spreadRadius: 1,
-                ),
-              ]
-            : null,
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.38),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+          if (active && days >= 30)
+            BoxShadow(
+              color: flameColor.withValues(alpha: 0.22),
+              blurRadius: 12,
+              spreadRadius: 1,
+            ),
+        ],
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.local_fire_department,
               size: _iconSize(),
-              color: active ? flameColor : colors.onSurfaceVariant,
+              color: iconColor,
             ),
-            const SizedBox(width: 5),
+            const SizedBox(width: 6),
             Text(
               '$days',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: textColor,
+                color: const Color(0xFFF7F0E4),
+                fontSize: 13,
                 fontWeight: FontWeight.w800,
+                shadows: const <Shadow>[
+                  Shadow(
+                    color: Color(0x99000000),
+                    blurRadius: 4,
+                    offset: Offset(0, 1),
+                  ),
+                ],
               ),
             ),
           ],
@@ -486,7 +525,7 @@ class _StreakPill extends StatelessWidget {
     );
   }
 
-  Color _flameColor(ColorScheme colors) {
+  Color _flameColor() {
     if (days >= 100) {
       return const Color(0xFF8B5CF6);
     }
@@ -496,7 +535,7 @@ class _StreakPill extends StatelessWidget {
     if (days >= 10) {
       return const Color(0xFFF97316);
     }
-    return colors.tertiary;
+    return const Color(0xFF8FD694);
   }
 
   double _iconSize() {

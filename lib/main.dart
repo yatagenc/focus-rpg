@@ -8,8 +8,8 @@ import 'data/database/app_database.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/potion_selection_screen.dart';
 import 'services/button_click_sound_service.dart';
+import 'services/menu_music_service.dart';
 import 'services/settings_service.dart';
-import 'services/shop_sound_service.dart';
 import 'views/character_selection_page.dart';
 import 'views/focus_session_page.dart';
 import 'views/main_hub_page.dart';
@@ -29,8 +29,6 @@ Future<void> main() async {
     await AppDatabase.instance.database;
   }
   await SettingsService.instance.load();
-  await ButtonClickSoundService.instance.initialize();
-  await ShopSoundService.instance.initialize();
   runApp(const FocusRPGApp());
 }
 
@@ -53,6 +51,9 @@ class FocusRPGApp extends StatelessWidget {
               child: child ?? const SizedBox.shrink(),
             );
           },
+          navigatorObservers: [
+            MenuMusicRouteObserver(service: MenuMusicService.instance),
+          ],
           initialRoute: AppRoutes.home,
           routes: {
             AppRoutes.home: (context) => const MainMenuPage(),

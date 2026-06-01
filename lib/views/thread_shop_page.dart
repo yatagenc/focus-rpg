@@ -8,6 +8,7 @@ import '../models/cosmetic_type.dart';
 import '../models/player_save.dart';
 import '../services/save_service.dart';
 import '../services/shop_sound_service.dart';
+import '../widgets/app_safe_layout.dart';
 
 class ThreadShopPage extends StatefulWidget {
   const ThreadShopPage({super.key});
@@ -117,7 +118,10 @@ class _ThreadShopPageState extends State<ThreadShopPage> {
               ),
             ),
           ),
-          SafeArea(
+          AppSafeLayout(
+            horizontal: 0,
+            top: 8,
+            bottom: 12,
             child: FutureBuilder<_ThreadShopData?>(
               future: _dataFuture,
               builder: (context, snapshot) {

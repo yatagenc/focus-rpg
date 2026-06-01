@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/potion_definition.dart';
 import '../models/potion_rarity.dart';
 import '../services/inventory_service.dart';
+import 'app_safe_layout.dart';
 import 'rarity_badge.dart';
 
 Future<void> showPotionDetailSheet({
@@ -42,12 +43,13 @@ class PotionDetailSheet extends StatelessWidget {
     );
 
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(
           20,
-          4,
+          AppSafeSpacing.top(context, 4),
           20,
-          20 + MediaQuery.of(context).viewInsets.bottom,
+          AppSafeSpacing.bottom(context, 20) +
+              MediaQuery.viewInsetsOf(context).bottom,
         ),
         child: DecoratedBox(
           decoration: BoxDecoration(

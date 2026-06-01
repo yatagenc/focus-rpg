@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/models/app_settings.dart';
 import '../services/settings_service.dart';
+import '../widgets/app_safe_layout.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -13,7 +14,10 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
+      body: AppSafeLayout(
+        horizontal: 0,
+        top: 8,
+        bottom: 12,
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(
@@ -23,7 +27,7 @@ class SettingsPage extends StatelessWidget {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 390),
                     child: Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: ValueListenableBuilder<AppSettings>(
                         valueListenable:
                             SettingsService.instance.settingsNotifier,

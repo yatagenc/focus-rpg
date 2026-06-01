@@ -4,6 +4,7 @@ import '../data/models/game_session.dart';
 import '../data/models/equipped_cosmetic.dart';
 import '../models/player_save.dart';
 import '../services/save_service.dart';
+import '../widgets/app_safe_layout.dart';
 import '../widgets/layered_avatar.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -52,7 +53,10 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
-      body: SafeArea(
+      body: AppSafeLayout(
+        horizontal: 0,
+        top: 4,
+        bottom: 8,
         child: FutureBuilder<_ProfileViewData>(
           future: _profileFuture,
           builder: (context, snapshot) {
@@ -78,7 +82,11 @@ class _ProfilePageState extends State<ProfilePage> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 390),
                 child: ListView(
-                  padding: const EdgeInsets.all(16),
+                  padding: AppSafeSpacing.listPadding(
+                    context,
+                    top: 12,
+                    bottom: 18,
+                  ),
                   children: [
                     _ProfileHeader(
                       save: data.save,

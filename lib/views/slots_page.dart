@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/routes.dart';
 import '../models/player_save.dart';
 import '../services/save_service.dart';
+import '../widgets/app_safe_layout.dart';
 import '../widgets/layered_avatar.dart';
 
 class SlotsPage extends StatefulWidget {
@@ -40,75 +41,84 @@ class _SlotsPageState extends State<SlotsPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Save Slots')),
-      body: FutureBuilder<List<PlayerSave>>(
-        future: _savesFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: AppSafeLayout(
+        horizontal: 0,
+        top: 4,
+        bottom: 8,
+        child: FutureBuilder<List<PlayerSave>>(
+          future: _savesFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (snapshot.hasError) {
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'Failed to load save slots.\n${snapshot.error}',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              );
+            }
+
+            final Map<int, PlayerSave> savesById = <int, PlayerSave>{
+              for (final PlayerSave save in snapshot.data ?? <PlayerSave>[])
+                save.profileId: save,
+            };
+
             return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Failed to load save slots.\n${snapshot.error}',
-                  textAlign: TextAlign.center,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 390),
+                child: ListView.separated(
+                  padding: AppSafeSpacing.listPadding(
+                    context,
+                    top: 12,
+                    bottom: 18,
+                  ),
+                  itemCount: slots.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final int slotNumber = slots[index];
+                    return SizedBox(
+                      height: 180,
+                      child: _SlotCard(
+                        slotNumber: slotNumber,
+                        save: savesById[slotNumber],
+                        onOpen: savesById[slotNumber] == null
+                            ? null
+                            : () async {
+                                await Navigator.pushNamed(
+                                  context,
+                                  AppRoutes.mainHub,
+                                  arguments: slotNumber,
+                                );
+                                await _reload();
+                              },
+                        onCreate: () async {
+                          final result = await Navigator.pushNamed(
+                            context,
+                            AppRoutes.characterSelection,
+                          );
+
+                          if (result == true) {
+                            await _reload();
+                          }
+                        },
+                        onDelete: savesById[slotNumber] == null
+                            ? null
+                            : () => _deleteProfile(slotNumber),
+                      ),
+                    );
+                  },
                 ),
               ),
             );
-          }
-
-          final Map<int, PlayerSave> savesById = <int, PlayerSave>{
-            for (final PlayerSave save in snapshot.data ?? <PlayerSave>[])
-              save.profileId: save,
-          };
-
-          return Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 390),
-              child: ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: slots.length,
-                separatorBuilder: (context, index) =>
-                    const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final int slotNumber = slots[index];
-                  return SizedBox(
-                    height: 180,
-                    child: _SlotCard(
-                      slotNumber: slotNumber,
-                      save: savesById[slotNumber],
-                      onOpen: savesById[slotNumber] == null
-                          ? null
-                          : () async {
-                              await Navigator.pushNamed(
-                                context,
-                                AppRoutes.mainHub,
-                                arguments: slotNumber,
-                              );
-                              await _reload();
-                            },
-                      onCreate: () async {
-                        final result = await Navigator.pushNamed(
-                          context,
-                          AppRoutes.characterSelection,
-                        );
-
-                        if (result == true) {
-                          await _reload();
-                        }
-                      },
-                      onDelete: savesById[slotNumber] == null
-                          ? null
-                          : () => _deleteProfile(slotNumber),
-                    ),
-                  );
-                },
-              ),
-            ),
-          );
-        },
+          },
+        ),
       ),
     );
   }

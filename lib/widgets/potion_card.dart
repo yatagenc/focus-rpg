@@ -12,6 +12,7 @@ class PotionCard extends StatelessWidget {
     this.trailing,
     this.selectedCount = 0,
     this.expanded = false,
+    this.showQuantityInTitle = false,
     this.onTap,
   });
 
@@ -20,6 +21,7 @@ class PotionCard extends StatelessWidget {
   final Widget? trailing;
   final int selectedCount;
   final bool expanded;
+  final bool showQuantityInTitle;
   final VoidCallback? onTap;
 
   @override
@@ -74,6 +76,7 @@ class PotionCard extends StatelessWidget {
                               quantity: quantity,
                               selectedCount: selectedCount,
                               expanded: expanded,
+                              showQuantityInTitle: showQuantityInTitle,
                               colors: colors,
                             ),
                           ),
@@ -101,6 +104,7 @@ class PotionCard extends StatelessWidget {
                         quantity: quantity,
                         selectedCount: selectedCount,
                         expanded: expanded,
+                        showQuantityInTitle: showQuantityInTitle,
                         colors: colors,
                       ),
                     ),
@@ -125,6 +129,7 @@ class _PotionSummary extends StatelessWidget {
     required this.quantity,
     required this.selectedCount,
     required this.expanded,
+    required this.showQuantityInTitle,
     required this.colors,
   });
 
@@ -132,6 +137,7 @@ class _PotionSummary extends StatelessWidget {
   final int quantity;
   final int selectedCount;
   final bool expanded;
+  final bool showQuantityInTitle;
   final ColorScheme colors;
 
   @override
@@ -139,13 +145,10 @@ class _PotionSummary extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          definition.name,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+        _PotionTitle(
+          name: definition.name,
+          quantity: quantity,
+          showQuantity: showQuantityInTitle,
         ),
         const SizedBox(height: 7),
         RarityBadge(rarity: definition.rarity),
@@ -154,7 +157,7 @@ class _PotionSummary extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            _InfoPill(label: 'Qty $quantity'),
+            if (!showQuantityInTitle) _InfoPill(label: 'Qty $quantity'),
             if (definition.priceGold != null)
               _InfoPill(label: '${definition.priceGold} Gold'),
             if (selectedCount > 0) _InfoPill(label: 'Selected $selectedCount'),
@@ -175,6 +178,49 @@ class _PotionSummary extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _PotionTitle extends StatelessWidget {
+  const _PotionTitle({
+    required this.name,
+    required this.quantity,
+    required this.showQuantity,
+  });
+
+  final String name;
+  final int quantity;
+  final bool showQuantity;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle? titleStyle = Theme.of(
+      context,
+    ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900);
+
+    if (!showQuantity) {
+      return Text(
+        name,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: titleStyle,
+      );
+    }
+
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: name),
+          TextSpan(
+            text: ' x$quantity',
+            style: titleStyle?.copyWith(fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: titleStyle,
     );
   }
 }
