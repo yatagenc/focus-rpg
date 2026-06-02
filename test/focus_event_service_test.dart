@@ -27,11 +27,20 @@ void main() {
         );
         types.add(challenge.type);
 
-        expect(challenge.responseSeconds, 12);
+        expect(
+          challenge.responseSeconds,
+          challenge.type == FocusEventType.holdRelease ? 9 : 12,
+        );
         expect(challenge.goldReward, 8);
         expect(challenge.xpReward, 12);
         if (challenge.type == FocusEventType.sequence) {
           expect(challenge.sequence.length, inInclusiveRange(3, 4));
+        }
+        if (challenge.type == FocusEventType.holdRelease) {
+          expect(challenge.successStart, 0.49);
+          expect(challenge.successEnd, 0.69);
+          expect(challenge.perfectStart, 0.57);
+          expect(challenge.perfectEnd, 0.61);
         }
         if (challenge.type == FocusEventType.dodge) {
           expect(challenge.direction, isNotNull);
