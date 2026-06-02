@@ -84,16 +84,16 @@ class FocusEventService {
       type: FocusEventType.holdRelease,
       title: 'Hold & Release',
       description: description,
-      responseSeconds: _config.responseSeconds,
+      responseSeconds: math.max(6, (_config.responseSeconds * 0.75).round()),
       goldReward: _config.baseGoldReward,
       xpReward: _config.baseXpReward,
       perfectGoldReward: _config.perfectGoldReward,
       perfectXpReward: _config.perfectXpReward,
       holdButtonCount: _random.nextBool() ? 1 : 2,
-      successStart: 0.44,
-      successEnd: 0.74,
-      perfectStart: 0.56,
-      perfectEnd: 0.64,
+      successStart: 0.49,
+      successEnd: 0.69,
+      perfectStart: 0.57,
+      perfectEnd: 0.61,
     );
   }
 
